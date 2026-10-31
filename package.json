@@ -1,0 +1,22 @@
+{
+  "name": "acuity-tools-site",
+  "version": "0.1.0",
+  "private": true,
+  "description": "tools.acuityip.com: host page for Acuity IP's USPTO tiles.",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "test": "node --test test/*.test.mjs",
+    "pin": "node scripts/pin.mjs"
+  },
+  "dependencies": {
+    "@atproto/oauth-client-browser": "0.5.8",
+    "@dasl/tile-loader": "2.0.0"
+  },
+  "devDependencies": {
+    "vite": "^6.3.5"
+  },
+  "engines": { "node": ">=22" }
+}

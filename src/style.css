@@ -1,0 +1,23 @@
+:root {
+  --paper: #eef1f5; --card: #ffffff; --ink: #1d2433; --soft: #5f6b7d; --line: #d6dbe3; --accent: #1f5fae;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; min-height: 100%; background: var(--paper); color: var(--ink);
+  font: 14px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+[hidden] { display: none !important; }
+#tools { max-width: 800px; margin: 0 auto; padding: 0 16px 24px; }
+.top { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding: 14px 0; }
+.brand { font-size: 17px; }
+.brand span { color: var(--soft); }
+.account { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: flex-end; }
+.who { font-weight: 600; }
+.why { color: var(--soft); font-size: 12px; max-width: 280px; }
+button { padding: 7px 12px; border-radius: 8px; border: 1px solid var(--line); background: var(--card); color: var(--ink);
+  font: inherit; cursor: pointer; }
+button.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+.note { margin: 0 0 10px; padding: 8px 10px; border-radius: 8px; background: #fff4e0; color: #8a5300; }
+.stage { display: flex; flex-direction: column; gap: 8px; }
+.tile-status { display: flex; gap: 10px; align-items: center; color: var(--soft); }
+.tile-frame { display: block; width: 100%; height: 900px; border: 1px solid var(--line); border-radius: 12px; background: var(--card); }
+.foot { margin-top: 14px; color: var(--soft); font-size: 12px; }
+.wait, .framed { padding: 40px 0; text-align: center; }

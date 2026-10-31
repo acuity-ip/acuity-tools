@@ -1,0 +1,42 @@
+# Build the tools page and publish it on GitHub Pages (custom domain tools.acuityip.com, from public/CNAME).
+# Modelled on Raku's deploy.yml.
+name: Deploy tools
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+concurrency:
+  group: pages
+  cancel-in-progress: false
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      - run: npm run build
+      - name: Check the built page carries its security policy
+        run: grep -q 'http-equiv="Content-Security-Policy"' dist/index.html
+      - name: Check the sign-in description file names this site and asks only for the proxy pass
+        run: node -e "const m=JSON.parse(require('fs').readFileSync('dist/oauth.json','utf8')); const c=require('fs').readFileSync('public/CNAME','utf8').trim(); if (m.client_id !== 'https://'+c+'/oauth.json' || m.redirect_uris[0] !== 'https://'+c+'/' || m.scope !== 'atproto rpc:com.acuityip.odp.query?aud=did:web:acuity-odp.fly.dev%23acuity_odp') process.exit(1)"
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
