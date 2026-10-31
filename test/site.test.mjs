@@ -44,7 +44,7 @@ test('bridge: hello -> status, then pending open', async () => {
 });
 
 test('bridge: query -> result; errors pass through', async () => {
-  const { b, sent } = bridgeFor({ ask: async (type, app) => (app === '18649422' ? { data: { type, app } } : { error: 'unpublished' }) });
+  const { b, sent } = bridgeFor({ ask: async (type, { app }) => (app === '18649422' ? { data: { type, app } } : { error: 'unpublished' }) });
   await b.handle(q());
   assert.deepEqual(sent.at(-1), { id: 'q1', type: 'timeline', data: { type: 'timeline', app: '18649422' }, tool: 'acuity-odp', v: 1, kind: 'result' });
   await b.handle(q({ id: 'q2', appNumber: '99999999' }));
@@ -90,6 +90,71 @@ test('bridge: signed out, rate limits, ask throwing', async () => {
   const boom = bridgeFor({ ask: async () => { throw new Error('x'); } });
   await boom.b.handle(q());
   assert.equal(boom.sent.at(-1).reason, 'upstream');
+});
+
+// ---------- appeals ----------
+const DOC = '0c3e18b7-ff84-4529-9c5a-b6985ddaa169';
+const aq = (fields) => ({ tool: 'acuity-odp', v: 1, kind: 'query', id: 'a1', type: 'appealSearch', search: { grounds: ['101'] }, ...fields });
+function appealsBridge(o = {}) {
+  return bridgeFor({ types: ['appealSearch', 'appealDoc'], ...o });
+}
+
+test('bridge: appeal search passes the form on as JSON; bad-search message and field come back', async () => {
+  const asked = [];
+  const { b, sent } = appealsBridge({ ask: async (t, p) => { asked.push([t, p]); return p.search.includes('999') ? { error: 'bad-search', message: 'Unknown ground 999.', field: 'grounds' } : { data: { total: 3 } }; } });
+  await b.handle(aq());
+  assert.deepEqual(asked[0], ['appealSearch', { search: '{"grounds":["101"]}' }]);
+  assert.deepEqual(sent.at(-1).data, { total: 3 });
+  await b.handle(aq({ id: 'a2', search: { grounds: ['999'] } }));
+  assert.deepEqual(sent.at(-1), { id: 'a2', reason: 'bad-search', message: 'Unknown ground 999.', field: 'grounds', tool: 'acuity-odp', v: 1, kind: 'error' });
+  for (const search of [null, 'grounds=101', [1], { text: 'x'.repeat(5000) }]) await b.handle(aq({ id: 'a3', search }));
+  assert.equal(asked.length, 2, 'malformed searches never reach the proxy');
+  await b.handle(q({ id: 't1' }));
+  assert.equal(sent.at(-1).reason, 'bad-type', 'the appeals tile cannot do application lookups');
+  const tl = bridgeFor();
+  await tl.b.handle(aq());
+  assert.equal(tl.sent.at(-1).reason, 'bad-type', 'and the timeline tile cannot search appeals');
+});
+
+test('bridge: decision PDF stays with the page; the tile only hears ready', async () => {
+  const docs = [];
+  const pdf = new Blob(['%PDF-1.7'], { type: 'application/pdf' });
+  const { b, sent } = appealsBridge({ ask: async () => ({ pdf }), onDoc: (p, a) => docs.push([p, a]) });
+  await b.handle(aq({ type: 'appealDoc', search: undefined, appeal: '2026003213', doc: DOC }));
+  assert.deepEqual(docs, [[pdf, '2026003213']]);
+  assert.deepEqual(sent.at(-1).data, { ready: true });
+  await b.handle(aq({ id: 'a2', type: 'appealDoc', appeal: '2026003213', doc: '../x' }));
+  assert.equal(sent.at(-1).reason, 'bad-search');
+  const noDoc = appealsBridge();
+  await noDoc.b.handle(aq({ type: 'appealDoc', appeal: '2026003213', doc: DOC }));
+  assert.equal(noDoc.sent.at(-1).reason, 'bad-type', 'no onDoc: refused');
+});
+
+test('bridge: show asks the page to open an application in the timeline tab', async () => {
+  const shown = [];
+  const { b, dropped } = appealsBridge({ onShow: (t, a) => shown.push([t, a]) });
+  await b.handle({ tool: 'acuity-odp', v: 1, kind: 'show', tile: 'timeline', appNumber: '18/136,874' });
+  await b.handle({ tool: 'acuity-odp', v: 1, kind: 'show', tile: 'appeals', appNumber: '18136874' });
+  await b.handle({ tool: 'acuity-odp', v: 1, kind: 'show', tile: 'timeline', appNumber: 'x' });
+  assert.deepEqual(shown, [['timeline', '18136874']]);
+  assert.deepEqual(dropped, ['bad-show', 'bad-show']);
+  const tl = bridgeFor();
+  await tl.b.handle({ tool: 'acuity-odp', v: 1, kind: 'show', tile: 'timeline', appNumber: '18136874' });
+  assert.deepEqual(tl.dropped, ['bad-show'], 'only tiles given onShow may ask');
+});
+
+test('proxy client: appeal search and decision PDF', async () => {
+  const urls = [];
+  let ask = createProxyClient({ getPass: async () => 'P', fetchImpl: async (url) => { urls.push(url); return new Response(JSON.stringify({ error: 'bad-search', message: 'Unknown ground 999.', field: 'grounds' }), { status: 400 }); } });
+  assert.deepEqual(await ask('appealSearch', { search: '{"grounds":["999"]}' }), { error: 'bad-search', message: 'Unknown ground 999.', field: 'grounds' });
+  assert.equal(urls[0], `${PROXY.url}/xrpc/${PROXY.lxm}?type=appealSearch&search=%7B%22grounds%22%3A%5B%22999%22%5D%7D`);
+  ask = createProxyClient({ getPass: async () => 'P', fetchImpl: async (url) => { urls.push(url); return new Response('%PDF-1.7', { status: 200, headers: { 'content-type': 'application/pdf' } }); } });
+  const r = await ask('appealDoc', { appeal: '2026003213', doc: DOC });
+  assert.equal(r.pdf.type, 'application/pdf');
+  assert.equal(await r.pdf.text(), '%PDF-1.7');
+  assert.ok(urls.at(-1).endsWith(`type=appealDoc&appeal=2026003213&doc=${DOC}`));
+  ask = createProxyClient({ getPass: async () => 'P', fetchImpl: async () => new Response('<html>', { status: 200, headers: { 'content-type': 'text/html' } }) });
+  assert.deepEqual(await ask('appealDoc', { appeal: '2026003213', doc: DOC }), { error: 'upstream' });
 });
 
 test('normalizeAppNumber', () => {

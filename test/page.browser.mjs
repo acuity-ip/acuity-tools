@@ -24,8 +24,16 @@ const csp = await page.locator('meta[http-equiv="Content-Security-Policy"]').get
 assert.match(csp, /script-src 'self';/);
 assert.match(csp, /frame-src https:\/\/load\.tiles\.lexicographer\.space/);
 ok('built page carries its policy and shows the sign-in button');
-await page.getByText("The timeline tile isn't pinned yet").waitFor();
-ok('unpinned tile: says so, loads nothing');
+assert.equal(await page.locator('#tab-timeline').getAttribute('aria-selected'), 'true', '#18649422 opens the Timeline tab');
+await page.goto(`${base}/#appeals`);
+await page.getByText("The PTAB appeal decisions tile isn't pinned yet").waitFor();
+assert.equal(await page.locator('#tab-appeals').getAttribute('aria-selected'), 'true');
+assert.equal(await page.locator('#panel-timeline').isHidden(), true);
+ok('tabs follow the address; an unpinned tile says so and loads nothing');
+await page.locator('#tab-timeline').click();
+assert.equal(await page.locator('#panel-appeals').isHidden(), true);
+assert.match(page.url(), /#timeline$/);
+ok('clicking a tab switches panels and the address');
 assert.match(await page.locator('.foot').textContent(), /estimates; the docketing system controls/);
 assert.match(await page.locator('.why').textContent(), /Nothing is posted/);
 ok('footer and permission note');

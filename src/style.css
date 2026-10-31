@@ -21,3 +21,15 @@ button.primary { background: var(--accent); border-color: var(--accent); color: 
 .tile-frame { display: block; width: 100%; height: 900px; border: 1px solid var(--line); border-radius: 12px; background: var(--card); }
 .foot { margin-top: 14px; color: var(--soft); font-size: 12px; }
 .wait, .framed { padding: 40px 0; text-align: center; }
+.tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); margin: 0 0 10px; }
+.tab { border: 1px solid transparent; border-bottom: 0; border-radius: 8px 8px 0 0; background: transparent; color: var(--soft);
+  padding: 7px 16px; margin-bottom: -1px; font-weight: 600; }
+.tab[aria-selected="true"] { background: var(--card); color: var(--ink); border-color: var(--line); }
+.panel { display: flex; flex-direction: column; gap: 8px; }
+.doc-bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 0 0 10px; padding: 8px 10px;
+  border-radius: 8px; background: #e8f5ee; color: #1f5a37; }
+.doc-bar span { flex: 1; min-width: 180px; }
+a.button { display: inline-block; padding: 7px 12px; border-radius: 8px; border: 1px solid var(--line); background: var(--card);
+  color: var(--ink); text-decoration: none; }
+a.button.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+.doc-bar button.quiet { border: 0; background: transparent; font-size: 18px; line-height: 1; padding: 2px 6px; color: inherit; }
