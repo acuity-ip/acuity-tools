@@ -6,8 +6,9 @@
 //         query { id, type, appNumber }                       (timeline tile: application lookups)
 //         query { id, type: "appealSearch", search }          (appeals tile: a search form, as an object)
 //         query { id, type: "appealDoc", appeal, doc }        (appeals tile: fetch a decision PDF)
+//         query { id, type: "appealStats", stats }            (stats tile: a statistics request, as an object)
 //         show  { tile: "timeline", appNumber }               (appeals tile: open an application in the timeline)
-//   down: status { signedIn } | open { appNumber } | result { id, type, data } | error { id, reason, message?, field? }
+//   down: status { signedIn } | open { appNumber } | result { id, type, data } | error { id, reason, message?, field?, progress? }
 //
 // A decision PDF never goes into a tile (tiles have no popups and no network). The page keeps it and shows
 // its own "Open" button; the tile is told { ready: true }.
@@ -16,6 +17,7 @@ export const TOOL = 'acuity-odp';
 export const VERSION = 1;
 export const TYPES = ['application', 'timeline', 'continuity', 'documents', 'pta'];
 export const APPEAL_TYPES = ['appealSearch', 'appealDoc'];
+export const STATS_TYPES = ['appealStats'];
 const ID = /^[A-Za-z0-9_-]{1,40}$/;
 const DOC_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const MAX_SEARCH_JSON = 4096;
@@ -36,6 +38,14 @@ export function queryParams(payload) {
       try { json = JSON.stringify(s); } catch { return { reason: 'bad-search' }; }
       if (json.length > MAX_SEARCH_JSON) return { reason: 'bad-search' };
       return { params: { search: json } };
+    }
+    case 'appealStats': {
+      const s = payload.stats;
+      if (!s || typeof s !== 'object' || Array.isArray(s)) return { reason: 'bad-search' };
+      let json;
+      try { json = JSON.stringify(s); } catch { return { reason: 'bad-search' }; }
+      if (json.length > MAX_SEARCH_JSON) return { reason: 'bad-search' };
+      return { params: { stats: json } };
     }
     case 'appealDoc': {
       const appeal = String(payload.appeal ?? '');
@@ -114,9 +124,12 @@ export function createBridge({ send, ask, signedIn, types = TYPES, limits, onDoc
     }
     if (out && out.data) return down('result', { id, type, data: out.data });
     const err = { id, reason: (out && out.error) || 'upstream' };
-    if (err.reason === 'bad-search') {
+    if (err.reason === 'bad-search' || err.reason === 'not-ready') {
       if (typeof out.message === 'string') err.message = out.message.slice(0, 200);
       if (typeof out.field === 'string' && /^[A-Za-z]{1,20}$/.test(out.field)) err.field = out.field;
+    }
+    if (err.reason === 'not-ready' && out.progress && Number.isFinite(out.progress.done) && Number.isFinite(out.progress.total)) {
+      err.progress = { done: out.progress.done, total: out.progress.total };
     }
     down('error', err);
   }

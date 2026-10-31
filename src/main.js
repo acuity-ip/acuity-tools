@@ -1,4 +1,4 @@
-// Acuity IP tools: the host page. Signs in as the practice, loads the pinned tiles (Timeline, Appeals) through
+// Acuity IP tools: the host page. Signs in as the practice, loads the pinned tiles (Timeline, Appeals, Appeal stats) through
 // one mothership, and answers their lookups through the ODP proxy. Tiles never touch the network.
 import './style.css';
 import { TileMothership, Tile } from '@dasl/tile-loader';
@@ -7,7 +7,7 @@ import { isFramed, showOpenInOwnTab } from './frame-guard.js';
 import { createAuth, isSignInReturn, SignInStopped, WrongAccount } from './auth.js';
 import { createPinnedLoader } from './pinned.js';
 import { createProxyClient } from './proxy.js';
-import { createBridge, APPEAL_TYPES } from './bridge.js';
+import { createBridge, APPEAL_TYPES, STATS_TYPES } from './bridge.js';
 
 const UP = 'tiles-protocol-up-data-payload';
 const DOWN = 'tiles-protocol-down-data-payload';
@@ -106,6 +106,7 @@ async function start() {
   const SLOTS = {
     timeline: { label: 'Timeline', title: 'USPTO timeline', types: ['timeline'], height: 900 },
     appeals: { label: 'Appeals', title: 'PTAB appeal decisions', types: APPEAL_TYPES, height: 1500, doc: true, show: true },
+    stats: { label: 'Appeal stats', title: 'PTAB appeal statistics', types: STATS_TYPES, height: 1500 },
   };
   const slots = {};
   for (const [id, spec] of Object.entries(SLOTS)) {
@@ -199,7 +200,7 @@ async function start() {
     slot.bridge.handle(d.payload);
   });
 
-  // The page address picks the tab: #appeals, #timeline, or #18649422 (opens that application).
+  // The page address picks the tab: #appeals, #stats, #timeline, or #18649422 (opens that application).
   function fromHash() {
     const raw = decodeURIComponent(location.hash.slice(1));
     if (slots[raw]) return choose(raw);

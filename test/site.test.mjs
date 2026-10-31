@@ -157,6 +157,33 @@ test('proxy client: appeal search and decision PDF', async () => {
   assert.deepEqual(await ask('appealDoc', { appeal: '2026003213', doc: DOC }), { error: 'upstream' });
 });
 
+// ---------- stats ----------
+test('bridge: stats requests pass through as JSON; not-ready brings its progress', async () => {
+  const asked = [];
+  const sq = (fields) => ({ tool: 'acuity-odp', v: 1, kind: 'query', id: 's1', type: 'appealStats', stats: { view: 'breakdown', slice: { tc: '3600' } }, ...fields });
+  let answer = { data: { v: 1 } };
+  const { b, sent } = bridgeFor({ types: ['appealStats'], ask: async (t, p) => { asked.push([t, p]); return answer; } });
+  await b.handle(sq());
+  assert.deepEqual(asked[0], ['appealStats', { stats: '{"view":"breakdown","slice":{"tc":"3600"}}' }]);
+  assert.deepEqual(sent.at(-1).data, { v: 1 });
+  answer = { error: 'not-ready', message: 'The appeals dataset is still being built.', progress: { done: 40, total: 360 }, extra: '<x>' };
+  await b.handle(sq({ id: 's2' }));
+  assert.deepEqual(sent.at(-1), { id: 's2', reason: 'not-ready', message: 'The appeals dataset is still being built.', progress: { done: 40, total: 360 }, tool: 'acuity-odp', v: 1, kind: 'error' });
+  for (const stats of [null, 'x', [1], { pad: 'y'.repeat(5000) }]) await b.handle(sq({ id: 's3', stats }));
+  assert.equal(asked.length, 2);
+  await b.handle(sq({ id: 's4', type: 'appealSearch', search: {} }));
+  assert.equal(sent.at(-1).reason, 'bad-type', 'the stats tile cannot search');
+});
+
+test('proxy client: stats and not-ready', async () => {
+  const urls = [];
+  let ask = createProxyClient({ getPass: async () => 'P', fetchImpl: async (u) => { urls.push(u); return new Response(JSON.stringify({ error: 'not-ready', message: 'Building.', status: { progress: { done: 3, total: 9 }, secret: 1 } }), { status: 503 }); } });
+  assert.deepEqual(await ask('appealStats', { stats: '{"view":"status"}' }), { error: 'not-ready', message: 'Building.', progress: { done: 3, total: 9 } });
+  assert.ok(urls[0].endsWith('type=appealStats&stats=%7B%22view%22%3A%22status%22%7D'));
+  ask = createProxyClient({ getPass: async () => 'P', fetchImpl: async () => new Response(JSON.stringify({ type: 'appealStats', data: { v: 1 } })) });
+  assert.deepEqual(await ask('appealStats', { stats: '{}' }), { data: { v: 1 } });
+});
+
 test('normalizeAppNumber', () => {
   assert.equal(normalizeAppNumber('18/649,422'), '18649422');
   assert.equal(normalizeAppNumber('PCTUS2020050660'), null);

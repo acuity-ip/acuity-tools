@@ -4,12 +4,12 @@ import { PROXY } from './config.js';
 
 export class SignInNeeded extends Error {}
 
-const REASONS = new Set(['invalid-number', 'bad-type', 'bad-search', 'unauthorized', 'unpublished', 'not-found', 'rate-limited', 'upstream', 'timeout']);
+const REASONS = new Set(['invalid-number', 'bad-type', 'bad-search', 'not-ready', 'unauthorized', 'unpublished', 'not-found', 'rate-limited', 'upstream', 'timeout']);
 const MAX_PDF = 30 * 1024 * 1024;
 
 /**
  * @param {() => Promise<string>} getPass   a service-auth token for the proxy (throws SignInNeeded)
- * ask(type, params): params is { app } (application lookups), { search } (a JSON string) or { appeal, doc }.
+ * ask(type, params): params is { app } (application lookups), { search } or { stats } (JSON strings), or { appeal, doc }.
  */
 export function createProxyClient({ getPass, fetchImpl = (...a) => globalThis.fetch(...a), proxy = PROXY }) {
   return async function ask(type, params) {
@@ -43,8 +43,11 @@ export function createProxyClient({ getPass, fetchImpl = (...a) => globalThis.fe
     const reason = body && REASONS.has(body.error) ? body.error : 'upstream';
     if (reason === 'unauthorized') return { error: 'signed-out' };
     const out = { error: reason };
-    if (reason === 'bad-search' && typeof body.message === 'string') out.message = body.message.slice(0, 200);
-    if (reason === 'bad-search' && typeof body.field === 'string' && /^[A-Za-z]{1,20}$/.test(body.field)) out.field = body.field;
+    const detail = reason === 'bad-search' || reason === 'not-ready';
+    if (detail && typeof body.message === 'string') out.message = body.message.slice(0, 200);
+    if (detail && typeof body.field === 'string' && /^[A-Za-z]{1,20}$/.test(body.field)) out.field = body.field;
+    const pr = reason === 'not-ready' && body.status && body.status.progress;
+    if (pr && Number.isFinite(pr.done) && Number.isFinite(pr.total)) out.progress = { done: pr.done, total: pr.total };
     return out;
   };
 }

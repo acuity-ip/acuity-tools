@@ -3,4 +3,5 @@
 export const PINS = Object.freeze({
   timeline: Object.freeze({ uri: 'at://did:plc:5uyc6bnln26yftnfkqtlwxr3/ing.dasl.masl/3mz5coxjha22y', cid: 'bafyreidfklf6znvlgsabwh43kjxvmvuqclbc7mn4y5xrrkcoxljzwwtzwa' }),
   appeals: Object.freeze({ uri: 'at://did:plc:5uyc6bnln26yftnfkqtlwxr3/ing.dasl.masl/3mz6eyhpfzi2y', cid: 'bafyreigfehmqiwjor4zgaxmqwgh7lbftyqafzpnsp2lrcevpe7w67fmmmi' }),
+  stats: Object.freeze({ uri: 'at://did:plc:5uyc6bnln26yftnfkqtlwxr3/ing.dasl.masl/3mz6o2i57ro2f', cid: 'bafyreigetnmwuhhxtv6sm4gxgjr72u2ues6rqypaq2j7fjvj6kdocdkimm' }),
 });
