@@ -46,11 +46,12 @@ async function start() {
   const tabs = h('nav', { class: 'tabs', role: 'tablist' });
   const stage = h('main', { class: 'stage' });
   root.replaceChildren(
-    h('header', { class: 'top' },
-      h('div', { class: 'brand' }, h('strong', {}, 'Acuity IP'), h('span', {}, ' tools')),
-      account),
+    h('header', { class: 'band' },
+      h('div', { class: 'top' },
+        h('div', { class: 'brand' }, h('span', { class: 'wordmark' }, 'acuityIP.'), h('span', { class: 'tools' }, 'uspto data')),
+        account),
+      tabs),
     note,
-    tabs,
     docBar,
     stage,
     h('footer', { class: 'foot' },
