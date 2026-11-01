@@ -68,7 +68,7 @@ async function start() {
     } else {
       account.append(
         h('button', { type: 'button', class: 'primary', onclick: onSignIn }, `Sign in as @${PRACTICE.handle}`),
-        h('span', { class: 'why' }, 'Asks only to request USPTO lookups from the Acuity proxy. Nothing is posted.'));
+        h('span', { class: 'why' }, 'Firm access to USPTO data tools via Acuity IP proxy.'));
     }
   }
 

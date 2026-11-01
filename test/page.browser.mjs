@@ -40,7 +40,7 @@ assert.equal(await page.locator('#tab-stats').getAttribute('aria-selected'), 'tr
 assert.equal(await page.locator('#tab-stats').textContent(), 'Appeal stats');
 ok('Appeal stats tab: #stats selects it');
 assert.match(await page.locator('.foot').textContent(), /estimates; the docketing system controls/);
-assert.match(await page.locator('.why').textContent(), /Nothing is posted/);
+assert.equal(await page.locator('.why').textContent(), 'Firm access to USPTO data tools via Acuity IP proxy.');
 ok('footer and permission note');
 
 const oauth = await (await page.request.get(`${base}/oauth.json`)).json();
