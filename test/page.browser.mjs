@@ -1,8 +1,11 @@
 // Browser check of the BUILT page (its real security policy), signed out, no network needed:
 //   npm run build && node test/page.browser.mjs        (needs Playwright + Chromium)
+// Requests that would leave this computer are blocked and recorded; the check only looks at where they go.
+// Works whatever is pinned: a pinned tile must start loading from the tile loader, an unpinned one must say so.
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 import { preview } from 'vite';
+import { PINS } from '../src/pins.js';
 const { chromium } = createRequire(import.meta.url)('playwright');
 
 const server = await preview({ preview: { port: 5186, strictPort: true, host: '127.0.0.1' } });
@@ -17,6 +20,22 @@ page.on('console', (m) => {
   if (/Content Security Policy/i.test(m.text())) cspViolations.push(m.text()); else errors.push(m.text());
 });
 const ok = (s) => console.log(`ok - ${s}`);
+const offsite = [];
+await page.context().route((url) => !url.href.startsWith(base), (route) => { offsite.push(new URL(route.request().url()).host); return route.abort(); });
+const blocked = (t) => /Failed to load resource|ERR_FAILED|ERR_BLOCKED/i.test(t);
+// Expected hosts for loading a pinned tile: the tile loader (and its per-tile subdomains), the account's
+// DID directory and its PDS. Nothing else.
+const TILE_HOSTS = /^(load\.tiles\.lexicographer\.space|[a-z]{20}\.tiles\.lexicographer\.space|plc\.directory|[a-z0-9.-]+\.host\.bsky\.network|bsky\.social)$/;
+
+/** The tab's own status line: "isn't pinned yet" when unpinned; otherwise it starts loading the pinned tile. */
+async function checkTile(id, title) {
+  const status = page.locator(`#panel-${id} .tile-status`);
+  if (!PINS[id]) {
+    await status.filter({ hasText: `The ${title} tile isn't pinned yet` }).waitFor();
+  } else {
+    await status.filter({ hasText: new RegExp(`Loading the ${title} tile|Still loading|Couldn't load the ${title} tile`) }).waitFor();
+  }
+}
 
 await page.goto(`${base}/#18649422`);
 await page.getByRole('button', { name: 'Sign in as @acuityip.com' }).waitFor();
@@ -26,16 +45,16 @@ assert.match(csp, /frame-src https:\/\/load\.tiles\.lexicographer\.space/);
 ok('built page carries its policy and shows the sign-in button');
 assert.equal(await page.locator('#tab-timeline').getAttribute('aria-selected'), 'true', '#18649422 opens the Timeline tab');
 await page.goto(`${base}/#appeals`);
-await page.getByText("The PTAB appeal decisions tile isn't pinned yet").waitFor();
+await checkTile('appeals', 'PTAB appeal decisions');
 assert.equal(await page.locator('#tab-appeals').getAttribute('aria-selected'), 'true');
 assert.equal(await page.locator('#panel-timeline').isHidden(), true);
-ok('tabs follow the address; an unpinned tile says so and loads nothing');
+ok(`tabs follow the address; the Appeals tile ${PINS.appeals ? 'starts loading from its pin' : 'says it isn\'t pinned'}`);
 await page.locator('#tab-timeline').click();
 assert.equal(await page.locator('#panel-appeals').isHidden(), true);
 assert.match(page.url(), /#timeline$/);
 ok('clicking a tab switches panels and the address');
 await page.goto(`${base}/#stats`);
-await page.getByText("The PTAB appeal statistics tile isn't pinned yet").waitFor();
+await checkTile('stats', 'PTAB appeal statistics');
 assert.equal(await page.locator('#tab-stats').getAttribute('aria-selected'), 'true');
 assert.equal(await page.locator('#tab-stats').textContent(), 'Appeal stats');
 ok('Appeal stats tab: #stats selects it');
@@ -57,7 +76,10 @@ assert.equal(await f.getByRole('button').count(), 0);
 ok('frame guard: no buttons inside a frame');
 
 assert.deepEqual(cspViolations, [], 'no policy violations');
-assert.deepEqual(errors, [], 'no page errors');
-ok('no policy violations, no errors');
+assert.deepEqual(errors.filter((e) => !blocked(e)), [], 'no page errors (blocked off-site requests aside)');
+const hosts = [...new Set(offsite)].sort();
+assert.deepEqual(hosts.filter((h) => !TILE_HOSTS.test(h)), [], `only tile-loading hosts were asked for (${hosts.join(', ') || 'none'})`);
+if (Object.values(PINS).some(Boolean)) assert.ok(hosts.some((h) => h.endsWith('tiles.lexicographer.space') || h === 'plc.directory'), 'a pinned tile was asked for');
+ok(`no policy violations, no errors; off-site requests only to: ${hosts.join(', ') || 'none'}`);
 await browser.close();
 server.httpServer.close();
