@@ -7,7 +7,7 @@ import { isFramed, showOpenInOwnTab } from './frame-guard.js';
 import { createAuth, isSignInReturn, SignInStopped, WrongAccount } from './auth.js';
 import { createPinnedLoader } from './pinned.js';
 import { createProxyClient } from './proxy.js';
-import { createBridge, APPEAL_TYPES, STATS_TYPES } from './bridge.js';
+import { createBridge, APPEAL_TYPES, STATS_TYPES, OA_TYPES } from './bridge.js';
 
 const UP = 'tiles-protocol-up-data-payload';
 const DOWN = 'tiles-protocol-down-data-payload';
@@ -105,7 +105,7 @@ async function start() {
   const ask = createProxyClient({ getPass: () => auth.getPass() });
 
   const SLOTS = {
-    timeline: { label: 'Timeline', title: 'USPTO timeline', types: ['timeline'], height: 900 },
+    timeline: { label: 'Timeline', title: 'USPTO timeline', types: ['timeline', ...OA_TYPES], height: 900 },
     appeals: { label: 'Appeals', title: 'PTAB appeal decisions', types: APPEAL_TYPES, height: 1500, doc: true, show: true },
     stats: { label: 'Appeal stats', title: 'PTAB appeal statistics', types: STATS_TYPES, height: 1500 },
   };

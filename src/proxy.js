@@ -23,7 +23,7 @@ export function createProxyClient({ getPass, fetchImpl = (...a) => globalThis.fe
     try {
       res = await fetchImpl(`${proxy.url}/xrpc/${proxy.lxm}?${qs}`, {
         headers: { authorization: `Bearer ${token}` },
-        signal: AbortSignal.timeout(type === 'appealDoc' ? proxy.timeoutMs * 2 : proxy.timeoutMs),
+        signal: AbortSignal.timeout(type === 'appealDoc' || type === 'actions' || type === 'actionText' ? proxy.timeoutMs * 2 : proxy.timeoutMs),
         credentials: 'omit',
         referrerPolicy: 'no-referrer',
       });

@@ -3,7 +3,8 @@
 //
 // Envelope: { tool: "acuity-odp", v: 1, kind, ... }
 //   up:   hello
-//         query { id, type, appNumber }                       (timeline tile: application lookups)
+//         query { id, type, appNumber }                       (timeline tile: application lookups, incl. "actions")
+//         query { id, type: "actionText", appNumber, action } (timeline tile: the text of one office action)
 //         query { id, type: "appealSearch", search }          (appeals tile: a search form, as an object)
 //         query { id, type: "appealDoc", appeal, doc }        (appeals tile: fetch a decision PDF)
 //         query { id, type: "appealStats", stats }            (stats tile: a statistics request, as an object)
@@ -18,6 +19,8 @@ export const VERSION = 1;
 export const TYPES = ['application', 'timeline', 'continuity', 'documents', 'pta'];
 export const APPEAL_TYPES = ['appealSearch', 'appealDoc'];
 export const STATS_TYPES = ['appealStats'];
+export const OA_TYPES = ['actions', 'actionText'];
+const ACTION_ID = /^[0-9a-f]{24,64}$/;
 const ID = /^[A-Za-z0-9_-]{1,40}$/;
 const DOC_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const MAX_SEARCH_JSON = 4096;
@@ -52,6 +55,13 @@ export function queryParams(payload) {
       const doc = String(payload.doc ?? '');
       if (!/^\d{10}$/.test(appeal) || !DOC_ID.test(doc)) return { reason: 'bad-search' };
       return { params: { appeal, doc } };
+    }
+    case 'actionText': {
+      const app = normalizeAppNumber(payload.appNumber);
+      if (!app) return { reason: 'invalid-number' };
+      const id = String(payload.action ?? '');
+      if (!ACTION_ID.test(id)) return { reason: 'not-found' };
+      return { params: { app, id } };
     }
     default: {
       const app = normalizeAppNumber(payload.appNumber);

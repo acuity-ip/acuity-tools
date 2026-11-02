@@ -274,3 +274,23 @@ test('auth: wrong account is revoked; pass request is addressed to the proxy', a
   assert.equal(auth.signedIn, false);
   await assert.rejects(auth.getPass(), SignInNeeded);
 });
+
+// ---------- office actions (timeline tile) ----------
+test('bridge: office actions list and one action text, checked before the proxy', async () => {
+  const ID = '85d3592f8af2c29bf8b6aeb09dee4e16f8d1a25fd60913df5f95a939';
+  const asked = [];
+  const { b, sent } = bridgeFor({ types: ['timeline', 'actions', 'actionText'], ask: async (t, p) => { asked.push([t, p]); return { data: { ok: t } }; } });
+  await b.handle(q({ id: 'o1', type: 'actions', appNumber: '18/649,422' }));
+  assert.deepEqual(asked.at(-1), ['actions', { app: '18649422' }]);
+  assert.deepEqual(sent.at(-1).data, { ok: 'actions' });
+  await b.handle(q({ id: 'o2', type: 'actionText', action: ID }));
+  assert.deepEqual(asked.at(-1), ['actionText', { app: '18649422', id: ID }]);
+  for (const action of [undefined, '../x', 'ABC', ID + '0'.repeat(20)]) await b.handle(q({ id: 'o3', type: 'actionText', action }));
+  assert.equal(sent.at(-1).reason, 'not-found');
+  await b.handle(q({ id: 'o4', type: 'actionText', appNumber: '12', action: ID }));
+  assert.equal(sent.at(-1).reason, 'invalid-number');
+  assert.equal(asked.length, 2, 'bad requests never reach the proxy');
+  const plain = bridgeFor();
+  await plain.b.handle(q({ id: 'o5', type: 'actions' }));
+  assert.equal(plain.sent.at(-1).reason, 'bad-type', 'only tiles allowed these types may ask');
+});
