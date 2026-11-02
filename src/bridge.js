@@ -8,7 +8,9 @@
 //         query { id, type: "appealSearch", search }          (appeals tile: a search form, as an object)
 //         query { id, type: "appealDoc", appeal, doc }        (appeals tile: fetch a decision PDF)
 //         query { id, type: "appealStats", stats }            (stats tile: a statistics request, as an object)
-//         show  { tile: "timeline", appNumber }               (appeals tile: open an application in the timeline)
+//         query { id, type: "examStats", exam }               (exam stats tile: a statistics request, as an object)
+//         show  { tile, appNumber }                           (appeals -> timeline; timeline -> exam: open an application there)
+//         print { report }                                    (exam stats tile: the page prints a report built from plain data)
 //   down: status { signedIn } | open { appNumber } | result { id, type, data } | error { id, reason, message?, field?, progress? }
 //
 // A decision PDF never goes into a tile (tiles have no popups and no network). The page keeps it and shows
@@ -20,11 +22,11 @@ export const TYPES = ['application', 'timeline', 'continuity', 'documents', 'pta
 export const APPEAL_TYPES = ['appealSearch', 'appealDoc'];
 export const STATS_TYPES = ['appealStats'];
 export const OA_TYPES = ['actions', 'actionText'];
+export const EXAM_TYPES = ['examStats'];
 const ACTION_ID = /^[0-9a-f]{24,64}$/;
 const ID = /^[A-Za-z0-9_-]{1,40}$/;
 const DOC_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const MAX_SEARCH_JSON = 4096;
-const SHOW_TILES = ['timeline'];
 
 export function normalizeAppNumber(input) {
   const s = String(input ?? '').replace(/[\s\/,]/g, '');
@@ -41,6 +43,14 @@ export function queryParams(payload) {
       try { json = JSON.stringify(s); } catch { return { reason: 'bad-search' }; }
       if (json.length > MAX_SEARCH_JSON) return { reason: 'bad-search' };
       return { params: { search: json } };
+    }
+    case 'examStats': {
+      const s = payload.exam;
+      if (!s || typeof s !== 'object' || Array.isArray(s)) return { reason: 'bad-search' };
+      let json;
+      try { json = JSON.stringify(s); } catch { return { reason: 'bad-search' }; }
+      if (json.length > 1024) return { reason: 'bad-search' };
+      return { params: { exam: json } };
     }
     case 'appealStats': {
       const s = payload.stats;
@@ -78,9 +88,12 @@ export function queryParams(payload) {
  * @param {string[]} [o.types]     query types this tile may use
  * @param {(pdf: Blob, appeal: string) => void} [o.onDoc]          the page shows its own Open button
  * @param {(tile: string, appNumber: string) => void} [o.onShow]   only if this tile may ask for it
+ * @param {string[]} [o.showTiles]                                the tiles it may ask to show
+ * @param {(report: object) => void} [o.onPrint]                  a checked report (see report.js), for the page to print
+ * @param {(raw: object) => object|null} [o.checkReport]          turns the tile's report into a safe one, or null
  * @param {{maxMessageBytes:number,inFlight:number,perMinute:number}} o.limits
  */
-export function createBridge({ send, ask, signedIn, types = TYPES, limits, onDoc = null, onShow = null, now = () => Date.now(), onDrop = () => {} }) {
+export function createBridge({ send, ask, signedIn, types = TYPES, limits, onDoc = null, onShow = null, showTiles = [], onPrint = null, checkReport = null, now = () => Date.now(), onDrop = () => {} }) {
   let inFlight = 0;
   let window = { start: 0, n: 0 };
   let pendingOpen = null;
@@ -108,10 +121,17 @@ export function createBridge({ send, ask, signedIn, types = TYPES, limits, onDoc
       return;
     }
     if (payload.kind === 'show') {
-      if (!onShow || !SHOW_TILES.includes(payload.tile)) return onDrop('bad-show');
+      if (!onShow || !showTiles.includes(payload.tile)) return onDrop('bad-show');
       const app = normalizeAppNumber(payload.appNumber);
       if (!app) return onDrop('bad-show');
       onShow(payload.tile, app);
+      return;
+    }
+    if (payload.kind === 'print') {
+      if (!onPrint || !checkReport || !signedIn()) return onDrop('bad-print');
+      const report = checkReport(payload.report);
+      if (!report) return onDrop('bad-print');
+      onPrint(report);
       return;
     }
     if (payload.kind !== 'query') return onDrop('unknown-kind');

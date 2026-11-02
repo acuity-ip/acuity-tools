@@ -70,3 +70,22 @@ a.button { display: inline-block; padding: 7px 12px; border-radius: 6px; border:
   color: var(--ink); text-decoration: none; }
 a.button.primary { background: var(--btn); border-color: var(--btn); color: var(--btn-ink); font-weight: 700; }
 .doc-bar button.quiet { border: 0; background: transparent; font-size: 18px; line-height: 1; padding: 2px 6px; color: inherit; }
+
+/* printable report: hidden on screen; when printing, the only thing on the page */
+.print-report { display: none; }
+@media print {
+  @page { margin: 16mm; }
+  body > *:not(#print-report) { display: none !important; }
+  html, body { background: #fff !important; color: #000 !important; }
+  .print-report { display: block; font: 11pt/1.4 Lato, Helvetica, Arial, sans-serif; color: #000; }
+  .print-report .r-brand { font: 16pt "Headland One", Georgia, serif; color: #2f3038; }
+  .print-report h1 { font: 700 15pt Lato, Helvetica, Arial, sans-serif; margin: 6pt 0 2pt; }
+  .print-report h2 { font: 700 11.5pt Lato, Helvetica, Arial, sans-serif; margin: 12pt 0 4pt; }
+  .print-report .r-sub, .print-report .r-when { margin: 0 0 2pt; color: #333; }
+  .print-report .r-head { border-bottom: 2pt solid #c1b653; padding-bottom: 6pt; }
+  .print-report table { border-collapse: collapse; width: 100%; page-break-inside: avoid; }
+  .print-report th, .print-report td { border-bottom: 0.5pt solid #bbb; padding: 3pt 6pt 3pt 0; text-align: left; vertical-align: top; }
+  .print-report .n { text-align: right; font-variant-numeric: tabular-nums; }
+  .print-report .r-notes { margin-top: 12pt; font-size: 9.5pt; color: #333; }
+  .print-report .r-foot { margin-top: 12pt; font-size: 9pt; color: #555; }
+}

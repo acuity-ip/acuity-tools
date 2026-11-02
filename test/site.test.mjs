@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createBridge, normalizeAppNumber } from '../src/bridge.js';
+import { checkReport, renderReport } from '../src/report.js';
 import { createProxyClient, SignInNeeded } from '../src/proxy.js';
 import { createPinnedLoader, rawCid, TileChanged } from '../src/pinned.js';
 import { SCOPE, oauthMetadata, pageCsp, PROXY } from '../src/config.js';
@@ -132,7 +133,7 @@ test('bridge: decision PDF stays with the page; the tile only hears ready', asyn
 
 test('bridge: show asks the page to open an application in the timeline tab', async () => {
   const shown = [];
-  const { b, dropped } = appealsBridge({ onShow: (t, a) => shown.push([t, a]) });
+  const { b, dropped } = appealsBridge({ onShow: (t, a) => shown.push([t, a]), showTiles: ['timeline'] });
   await b.handle({ tool: 'acuity-odp', v: 1, kind: 'show', tile: 'timeline', appNumber: '18/136,874' });
   await b.handle({ tool: 'acuity-odp', v: 1, kind: 'show', tile: 'appeals', appNumber: '18136874' });
   await b.handle({ tool: 'acuity-odp', v: 1, kind: 'show', tile: 'timeline', appNumber: 'x' });
@@ -293,4 +294,68 @@ test('bridge: office actions list and one action text, checked before the proxy'
   const plain = bridgeFor();
   await plain.b.handle(q({ id: 'o5', type: 'actions' }));
   assert.equal(plain.sent.at(-1).reason, 'bad-type', 'only tiles allowed these types may ask');
+});
+
+// ---------- exam stats ----------
+test('bridge: exam stats request passed on as JSON; the timeline may show the exam tab, nothing else', async () => {
+  const asked = [];
+  const ex = bridgeFor({ types: ['examStats'], ask: async (t, p) => { asked.push([t, p]); return { error: 'bad-search', message: 'An art unit is 4 digits, for example 3771.', field: 'id' }; } });
+  await ex.b.handle(q({ id: 'e1', type: 'examStats', exam: { level: 'artUnit', id: '37', years: 3 } }));
+  assert.deepEqual(asked[0], ['examStats', { exam: '{"level":"artUnit","id":"37","years":3}' }]);
+  assert.deepEqual(ex.sent.at(-1), { id: 'e1', reason: 'bad-search', message: 'An art unit is 4 digits, for example 3771.', field: 'id', tool: 'acuity-odp', v: 1, kind: 'error' });
+  for (const exam of [null, 'x', [1], { pad: 'x'.repeat(2000) }]) await ex.b.handle(q({ id: 'e2', type: 'examStats', exam }));
+  assert.equal(asked.length, 1, 'malformed requests never reach the proxy');
+  const shown = [];
+  const tl = bridgeFor({ types: ['timeline'], onShow: (t, a) => shown.push([t, a]), showTiles: ['exam'] });
+  await tl.b.handle({ tool: 'acuity-odp', v: 1, kind: 'show', tile: 'exam', appNumber: '18649422' });
+  await tl.b.handle({ tool: 'acuity-odp', v: 1, kind: 'show', tile: 'appeals', appNumber: '18649422' });
+  assert.deepEqual(shown, [['exam', '18649422']]);
+  assert.deepEqual(tl.dropped, ['bad-show']);
+});
+
+const REPORT = {
+  title: 'Art unit 3771, Nov 2023 – Nov 2026',
+  subtitle: 'USPTO examination statistics',
+  sections: [{ heading: 'Rejections by statute', columns: ['Statute', 'Art unit 3771', 'Tech center 3700'], rows: [['§101', '2.1% (297)', '8.9% (29,296)'], ['§103', '72.1%', '70.0%']] }],
+  notes: ['Published applications only.'],
+};
+
+test('report: checked and trimmed; anything odd refused', () => {
+  const r = checkReport({ ...REPORT, extra: '<script>' });
+  assert.deepEqual(Object.keys(r), ['title', 'subtitle', 'sections', 'notes']);
+  assert.equal(r.sections[0].rows[0][1], '2.1% (297)');
+  assert.equal(checkReport({ ...REPORT, title: 'x'.repeat(500) }).title.length, 120);
+  assert.equal(checkReport({ ...REPORT, title: 'a\u0000b' }).title, 'a b');
+  for (const bad of [null, [], { ...REPORT, title: '' }, { ...REPORT, sections: [] },
+    { ...REPORT, sections: [{ heading: 'x', columns: ['a', 'b'], rows: [['1']] }] },
+    { ...REPORT, sections: [{ heading: 'x', columns: ['a'], rows: Array.from({ length: 41 }, () => ['1']) }] },
+    { ...REPORT, sections: [{ heading: 'x', columns: ['a'], rows: [[{ toString: () => 'x' }]] }] }]) {
+    const out = checkReport(bad);
+    if (out) assert.equal(out.sections[0].rows[0][0], '', 'objects become empty cells, never strings from code'); else assert.equal(out, null);
+  }
+});
+
+test('bridge: print only when signed in, only from a tile allowed to, only a checked report', async () => {
+  const printed = [];
+  const { b, dropped } = bridgeFor({ types: ['examStats'], onPrint: (r) => printed.push(r), checkReport });
+  await b.handle({ tool: 'acuity-odp', v: 1, kind: 'print', report: REPORT });
+  await b.handle({ tool: 'acuity-odp', v: 1, kind: 'print', report: { title: 'x' } });
+  assert.equal(printed.length, 1);
+  assert.equal(printed[0].title, REPORT.title);
+  const out = bridgeFor({ types: ['examStats'], signedIn: false, onPrint: (r) => printed.push(r), checkReport });
+  await out.b.handle({ tool: 'acuity-odp', v: 1, kind: 'print', report: REPORT });
+  const no = bridgeFor({ types: ['timeline'] });
+  await no.b.handle({ tool: 'acuity-odp', v: 1, kind: 'print', report: REPORT });
+  assert.equal(printed.length, 1);
+  assert.deepEqual([...dropped, ...out.dropped, ...no.dropped], ['bad-print', 'bad-print', 'bad-print']);
+});
+
+test('report: rendered with text only', () => {
+  const made = [];
+  const h = (tag, attrs, ...kids) => { const n = { tag, attrs, kids: kids.flat().filter((k) => k !== null && k !== undefined) }; made.push(n); return n; };
+  const box = { replaceChildren: (...kids) => { box.kids = kids; } };
+  renderReport(box, checkReport({ ...REPORT, title: '<b>x</b>' }), { h, firm: 'acuityIP.', generated: new Date('2026-11-02T15:00:00Z') });
+  assert.ok(made.some((n) => n.tag === 'h1' && n.kids[0] === '<b>x</b>'), 'markup stays text');
+  assert.ok(made.some((n) => n.tag === 'td' && n.kids[0] === '2.1% (297)'));
+  assert.ok(made.some((n) => n.tag === 'p' && /Not docketing advice/.test(n.kids[0])));
 });

@@ -1,4 +1,4 @@
-// Acuity IP tools: the host page. Signs in as the practice, loads the pinned tiles (Timeline, Appeals, Appeal stats) through
+// Acuity IP tools: the host page. Signs in as the practice, loads the pinned tiles (Timeline, Appeals, Appeal stats, Exam stats) through
 // one mothership, and answers their lookups through the ODP proxy. Tiles never touch the network.
 import './style.css';
 import { TileMothership, Tile } from '@dasl/tile-loader';
@@ -7,7 +7,8 @@ import { isFramed, showOpenInOwnTab } from './frame-guard.js';
 import { createAuth, isSignInReturn, SignInStopped, WrongAccount } from './auth.js';
 import { createPinnedLoader } from './pinned.js';
 import { createProxyClient } from './proxy.js';
-import { createBridge, APPEAL_TYPES, STATS_TYPES, OA_TYPES } from './bridge.js';
+import { createBridge, APPEAL_TYPES, STATS_TYPES, OA_TYPES, EXAM_TYPES } from './bridge.js';
+import { checkReport, renderReport } from './report.js';
 
 const UP = 'tiles-protocol-up-data-payload';
 const DOWN = 'tiles-protocol-down-data-payload';
@@ -55,7 +56,7 @@ async function start() {
     docBar,
     stage,
     h('footer', { class: 'foot' },
-      'Published US applications and patents only. Data: USPTO Open Data Portal (applications and PTAB decisions). ',
+      'Published US applications and patents only. Data: USPTO Open Data Portal (applications, office actions and PTAB decisions). ',
       'Response windows are estimates; the docketing system controls.'));
 
   const say = (text) => { note.textContent = text || ''; note.hidden = !text; };
@@ -98,6 +99,27 @@ async function start() {
     docBar.hidden = false;
   }
 
+  // ---------- printable reports (built by the page from a tile's plain data; nothing kept) ----------
+  const printBox = h('div', { id: 'print-report', class: 'print-report', 'aria-hidden': 'true' });
+  document.body.append(printBox);
+  let printTitle = null;
+  function showReport(report) {
+    renderReport(printBox, report, { h, firm: 'acuityIP.' });
+    printTitle = report.title;
+    docBar.replaceChildren(
+      h('span', {}, `Report ready: ${report.title}.`),
+      h('button', { type: 'button', class: 'primary', onclick: printReport }, 'Print or save as PDF'),
+      h('button', { type: 'button', class: 'quiet', 'aria-label': 'Dismiss', onclick: clearReport }, '×'));
+    docBar.hidden = false;
+  }
+  function printReport() {
+    const was = document.title;
+    if (printTitle) document.title = `acuityIP ${printTitle}`;       // the browser's suggested PDF name
+    addEventListener('afterprint', () => { document.title = was; }, { once: true });
+    globalThis.print();
+  }
+  function clearReport() { printBox.replaceChildren(); printTitle = null; docBar.hidden = true; }
+
   // ---------- the tiles: one frame and one bridge each, one shown at a time ----------
   const mothership = new TileMothership({ loadDomain: TILE_LOAD_DOMAIN });
   mothership.addLoader(createPinnedLoader({ Tile, pins: Object.values(PINS).filter(Boolean) }));
@@ -105,9 +127,10 @@ async function start() {
   const ask = createProxyClient({ getPass: () => auth.getPass() });
 
   const SLOTS = {
-    timeline: { label: 'Timeline', title: 'USPTO timeline', types: ['timeline', ...OA_TYPES], height: 900 },
-    appeals: { label: 'Appeals', title: 'PTAB appeal decisions', types: APPEAL_TYPES, height: 1500, doc: true, show: true },
+    timeline: { label: 'Timeline', title: 'USPTO timeline', types: ['timeline', ...OA_TYPES], height: 900, show: ['exam'] },
+    appeals: { label: 'Appeals', title: 'PTAB appeal decisions', types: APPEAL_TYPES, height: 1500, doc: true, show: ['timeline'] },
     stats: { label: 'Appeal stats', title: 'PTAB appeal statistics', types: STATS_TYPES, height: 1500 },
+    exam: { label: 'Exam stats', title: 'USPTO examination statistics', types: EXAM_TYPES, height: 1500, print: true },
   };
   const slots = {};
   for (const [id, spec] of Object.entries(SLOTS)) {
@@ -124,6 +147,9 @@ async function start() {
       limits: BRIDGE_LIMITS,
       onDoc: spec.doc ? showDoc : null,
       onShow: spec.show ? (tile, app) => { choose(tile, true, app); } : null,
+      showTiles: spec.show || [],
+      onPrint: spec.print ? showReport : null,
+      checkReport,
       onDrop: (why) => console.warn(`[tools] dropped a message from the ${id} tile:`, why),
     });
     tabs.append(slot.tab);
@@ -187,7 +213,7 @@ async function start() {
     if (!slot.loaded) load(slot);
     if (appNumber) slot.bridge.open(appNumber);
     if (updateHash) {
-      const want = appNumber ? `#${appNumber}` : `#${id}`;
+      const want = appNumber && id === 'timeline' ? `#${appNumber}` : `#${id}`;
       if (location.hash !== want) guarded(() => history.replaceState(null, '', want));
     }
   }
@@ -201,7 +227,7 @@ async function start() {
     slot.bridge.handle(d.payload);
   });
 
-  // The page address picks the tab: #appeals, #stats, #timeline, or #18649422 (opens that application).
+  // The page address picks the tab: #appeals, #stats, #exam, #timeline, or #18649422 (opens that application).
   function fromHash() {
     const raw = decodeURIComponent(location.hash.slice(1));
     if (slots[raw]) return choose(raw);
@@ -214,6 +240,7 @@ async function start() {
     drawAccount();
     for (const s of Object.values(slots)) s.bridge.status();
     if (!auth.signedIn && docUrl) { URL.revokeObjectURL(docUrl); docUrl = null; docBar.hidden = true; }
+    if (!auth.signedIn && printTitle) clearReport();
     if (auth.problem instanceof WrongAccount) say(auth.problem.message);
   });
   drawAccount();
