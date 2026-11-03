@@ -12,6 +12,7 @@ import { createPinnedLoader } from './pinned.js';
 import { createProxyClient } from './proxy.js';
 import { createBridge, APPEAL_TYPES, STATS_TYPES, OA_TYPES, EXAM_TYPES, EP_TYPES, FAMILY_TYPES, normalizeEpNumber, normalizeAppNumber } from './bridge.js';
 import { linkFor } from './links.js';
+import { createRegistry } from './grants.js';
 import { checkReport, renderReport } from './report.js';
 
 const UP = 'tiles-protocol-up-data-payload';
@@ -151,13 +152,18 @@ async function start() {
 
   // hash: the tab's own address (default: its id). number: the numbers its tile takes (US by default).
   const SLOTS = {
-    timeline: { office: 'us', label: 'Timeline', title: 'USPTO timeline', types: ['timeline', ...OA_TYPES, ...FAMILY_TYPES], height: 1200, show: ['exam', 'eptimeline'], links: ALL_LINKS },
+    timeline: { office: 'us', label: 'Timeline', title: 'USPTO timeline', types: ['timeline', ...OA_TYPES, ...FAMILY_TYPES], height: 1200, show: ['exam', 'eptimeline'], links: ALL_LINKS,
+      grants: [{ office: 'US', record: 'application', label: 'USPTO timeline' }], wishes: ['US/application', 'EP/application', 'US/examStats'] },
     appeals: { office: 'us', label: 'Appeals', title: 'PTAB appeal decisions', types: APPEAL_TYPES, height: 1500, doc: true, show: ['timeline'] },
     stats: { office: 'us', label: 'Appeal stats', title: 'PTAB appeal statistics', types: STATS_TYPES, height: 1500 },
-    exam: { office: 'us', label: 'Exam stats', title: 'USPTO examination statistics', types: EXAM_TYPES, height: 1500, print: true },
-    eptimeline: { office: 'ep', hash: 'ep/timeline', label: 'Timeline', title: 'EPO timeline', types: [...EP_TYPES, ...FAMILY_TYPES], height: 1500, number: normalizeEpNumber, show: ['timeline'], links: ALL_LINKS },
+    exam: { office: 'us', label: 'Exam stats', title: 'USPTO examination statistics', types: EXAM_TYPES, height: 1500, print: true,
+      grants: [{ office: 'US', record: 'examStats', label: 'Exam stats' }] },
+    eptimeline: { office: 'ep', hash: 'ep/timeline', label: 'Timeline', title: 'EPO timeline', types: [...EP_TYPES, ...FAMILY_TYPES], height: 1500, number: normalizeEpNumber, show: ['timeline'], links: ALL_LINKS,
+      grants: [{ office: 'EP', record: 'application', label: 'EPO timeline' }], wishes: ['US/application', 'EP/application'] },
   };
   const hashOf = (id) => SLOTS[id].hash || id;
+  // The page as house: each tab grants records by office; tiles wish (show stays for tiles published before wishes).
+  const registry = createRegistry(SLOTS);
   const lastTab = { us: null, ep: null };
   const slots = {};
   for (const [id, spec] of Object.entries(SLOTS)) {
@@ -179,6 +185,13 @@ async function start() {
       checkReport,
       numberCheck: spec.number || normalizeAppNumber,
       onLink: spec.links ? showLink : null,
+      onWish: spec.wishes ? (want) => {
+        const d = registry.decide(want, spec.wishes);
+        if (d.refused) return false;
+        choose(d.tile, true, d.number);
+        return true;
+      } : null,
+      offers: spec.wishes ? () => registry.offers(spec.wishes) : null,
       linkTargets: spec.links || [],
       onDrop: (why) => console.warn(`[tools] dropped a message from the ${id} tile:`, why),
     });

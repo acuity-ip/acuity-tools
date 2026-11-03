@@ -12,8 +12,10 @@
 //         show  { tile, appNumber }                           (appeals -> timeline; timeline -> exam: open an application there)
 //         print { report }                                    (exam stats tile: the page prints a report built from plain data)
 //         query { id, type: "epTimeline", appNumber }         (EPO timeline tile: appNumber is an EP application or publication number)
-//         query { id, type: "family", of }                    (both timelines: the INPADOC family of a published member, e.g. US20250192292A1)
+//         query { id, type: "family", of, legal? }            (both timelines: the INPADOC family of a published member, e.g. US20250192292A1; legal: true adds legal status)
 //         link  { target, number }                            (both timelines: the page offers a link out; see links.js)
+//         wish  { want: { office, record, number } }          (both timelines: open a record in whichever tab grants it; see grants.js)
+//   status also carries grants: [{ office, record, label }]   (what this tile may wish for right now)
 //   down: status { signedIn } | open { appNumber } | result { id, type, data } | error { id, reason, message?, field?, progress? }
 //
 // A decision PDF never goes into a tile (tiles have no popups and no network). The page keeps it and shows
@@ -91,7 +93,8 @@ export function queryParams(payload) {
     }
     case 'family': {
       const of = typeof payload.of === 'string' && payload.of.length <= 40 ? payload.of.toUpperCase().replace(/[\s,/]/g, '') : '';
-      return /^[A-Z]{2}[0-9A-Z]{4,15}$/.test(of) ? { params: { of } } : { reason: 'invalid-number' };
+      if (!/^[A-Z]{2}[0-9A-Z]{4,15}$/.test(of)) return { reason: 'invalid-number' };
+      return { params: payload.legal === true ? { of, legal: '1' } : { of } };
     }
     case 'epTimeline': {
       const ep = normalizeEpNumber(payload.appNumber);
@@ -126,13 +129,16 @@ export function queryParams(payload) {
  * @param {(n: string) => string|null} [o.numberCheck]           this tile's own numbers, for open (US by default; EP for EP tiles)
  * @param {(target: string, number: string) => boolean} [o.onLink] the page checks and offers a link out (true if it did)
  * @param {string[]} [o.linkTargets]                              the link targets this tile may ask for
+ * @param {(want: object) => boolean} [o.onWish]                 the page as house: true if it granted the wish
+ * @param {() => object[]} [o.offers]                            what this tile may wish for now (sent with status)
  */
-export function createBridge({ send, ask, signedIn, types = TYPES, limits, onDoc = null, onShow = null, showTiles = [], onPrint = null, checkReport = null, numberCheck = normalizeAppNumber, onLink = null, linkTargets = [], now = () => Date.now(), onDrop = () => {} }) {
+export function createBridge({ send, ask, signedIn, types = TYPES, limits, onDoc = null, onShow = null, showTiles = [], onPrint = null, checkReport = null, numberCheck = normalizeAppNumber, onLink = null, linkTargets = [], onWish = null, offers = null, now = () => Date.now(), onDrop = () => {} }) {
   let inFlight = 0;
   let window = { start: 0, n: 0 };
   let pendingOpen = null;
   let greeted = false;
   const down = (kind, fields = {}) => send({ ...fields, tool: TOOL, v: VERSION, kind });
+  const statusFields = () => ({ signedIn: !!signedIn(), ...(offers ? { grants: offers() } : {}) });
 
   function overLimit() {
     const t = now();
@@ -150,7 +156,7 @@ export function createBridge({ send, ask, signedIn, types = TYPES, limits, onDoc
 
     if (payload.kind === 'hello') {
       greeted = true;
-      down('status', { signedIn: !!signedIn() });
+      down('status', statusFields());
       if (pendingOpen) { down('open', { appNumber: pendingOpen }); pendingOpen = null; }
       return;
     }
@@ -159,6 +165,13 @@ export function createBridge({ send, ask, signedIn, types = TYPES, limits, onDoc
       const app = numberCheckFor(payload.tile)(payload.appNumber);
       if (!app) return onDrop('bad-show');
       onShow(payload.tile, app);
+      return;
+    }
+    if (payload.kind === 'wish') {
+      const w = payload.want;
+      if (!onWish || !w || typeof w !== 'object' || Array.isArray(w)) return onDrop('bad-wish');
+      const want = { office: String(w.office ?? '').slice(0, 4), record: String(w.record ?? '').slice(0, 20), number: typeof w.number === 'string' ? w.number.slice(0, 40) : '' };
+      if (!onWish(want)) return onDrop('bad-wish');
       return;
     }
     if (payload.kind === 'link') {
@@ -206,7 +219,7 @@ export function createBridge({ send, ask, signedIn, types = TYPES, limits, onDoc
   return {
     handle,
     /** Tell the tile whether lookups can work now (call on every sign-in change). */
-    status() { if (greeted) down('status', { signedIn: !!signedIn() }); },
+    status() { if (greeted) down('status', statusFields()); },
     /** Ask the tile to look up a number (e.g. from the page address); waits for its hello if needed. */
     open(appNumber) {
       const app = numberCheck(appNumber);

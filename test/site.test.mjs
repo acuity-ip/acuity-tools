@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createBridge, normalizeAppNumber, normalizeEpNumber, numberCheckFor, queryParams, EP_TYPES, FAMILY_TYPES } from '../src/bridge.js';
 import { linkFor, LINKS } from '../src/links.js';
+import { createRegistry, NUMBER_CHECKS } from '../src/grants.js';
 import { checkReport, renderReport } from '../src/report.js';
 import { createProxyClient, SignInNeeded } from '../src/proxy.js';
 import { createPinnedLoader, rawCid, TileChanged } from '../src/pinned.js';
@@ -440,4 +441,49 @@ test('bridge: show between offices checks the target office\'s number', async ()
   await b.handle({ tool: 'acuity-odp', v: 1, kind: 'show', tile: 'timeline', appNumber: '18906701' });
   assert.deepEqual(shown, [['eptimeline', 'EP23215480']]);
   assert.deepEqual(dropped, ['bad-show', 'bad-show']);
+});
+
+// ---------- wishes and grants (Nov 2 2026) ----------
+const GRANT_SLOTS = {
+  timeline: { grants: [{ office: 'US', record: 'application', label: 'USPTO timeline' }] },
+  exam: { grants: [{ office: 'US', record: 'examStats', label: 'Exam stats' }] },
+  eptimeline: { grants: [{ office: 'EP', record: 'application', label: 'EPO timeline' }] },
+  appeals: {},
+};
+
+test('registry: a wish goes to the tab that grants it, with the number checked for that office', () => {
+  const r = createRegistry(GRANT_SLOTS);
+  const mine = ['US/application', 'EP/application', 'US/examStats'];
+  assert.deepEqual(r.decide({ office: 'EP', record: 'application', number: 'EP 23 215 480.1' }, mine), { tile: 'eptimeline', number: 'EP23215480' });
+  assert.deepEqual(r.decide({ office: 'US', record: 'application', number: '18/906,701' }, mine), { tile: 'timeline', number: '18906701' });
+  assert.deepEqual(r.decide({ office: 'US', record: 'examStats', number: '18649422' }, mine), { tile: 'exam', number: '18649422' });
+  assert.deepEqual(r.decide({ office: 'EP', record: 'application', number: '18649422' }, mine), { refused: 'bad-number' }, 'a US number is never taken as EP');
+  assert.deepEqual(r.decide({ office: 'JP', record: 'application', number: '2024188774' }, [...mine, 'JP/application']), { refused: 'no-grantor' });
+  assert.deepEqual(r.decide({ office: 'US', record: 'examStats', number: '18649422' }, ['EP/application']), { refused: 'not-allowed' });
+  assert.deepEqual(r.decide(null, mine), { refused: 'bad-wish' });
+  assert.deepEqual(r.offers(['EP/application', 'JP/application', 'US/examStats']), [
+    { office: 'EP', record: 'application', label: 'EPO timeline' }, { office: 'US', record: 'examStats', label: 'Exam stats' }]);
+  assert.throws(() => createRegistry({ a: { grants: [{ office: 'JP', record: 'application', label: 'x' }] } }), /can't grant/);
+  assert.throws(() => createRegistry({ a: GRANT_SLOTS.timeline, b: GRANT_SLOTS.timeline }), /granted twice/);
+  assert.deepEqual(Object.keys(NUMBER_CHECKS), ['US', 'EP']);
+});
+
+test('bridge: status carries the grants a tile may wish for; wishes go to the page as house; legal status param', async () => {
+  const r = createRegistry(GRANT_SLOTS);
+  const allowed = ['US/application', 'EP/application'];
+  const opened = [];
+  const { b, sent, dropped } = bridgeFor({
+    types: ['timeline', 'family'],
+    offers: () => r.offers(allowed),
+    onWish: (want) => { const d = r.decide(want, allowed); if (d.refused) return false; opened.push([d.tile, d.number]); return true; },
+  });
+  await b.handle({ tool: 'acuity-odp', v: 1, kind: 'hello' });
+  assert.deepEqual(sent[0].grants, [{ office: 'US', record: 'application', label: 'USPTO timeline' }, { office: 'EP', record: 'application', label: 'EPO timeline' }]);
+  await b.handle({ tool: 'acuity-odp', v: 1, kind: 'wish', want: { office: 'EP', record: 'application', number: 'EP23215480' } });
+  await b.handle({ tool: 'acuity-odp', v: 1, kind: 'wish', want: { office: 'US', record: 'examStats', number: '18649422' } });
+  await b.handle({ tool: 'acuity-odp', v: 1, kind: 'wish', want: 'EP23215480' });
+  assert.deepEqual(opened, [['eptimeline', 'EP23215480']]);
+  assert.deepEqual(dropped, ['bad-wish', 'bad-wish']);
+  assert.deepEqual(queryParams({ type: 'family', of: 'EP4571955A1', legal: true }), { params: { of: 'EP4571955A1', legal: '1' } });
+  assert.deepEqual(queryParams({ type: 'family', of: 'EP4571955A1', legal: 'yes' }), { params: { of: 'EP4571955A1' } });
 });
