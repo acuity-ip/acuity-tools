@@ -32,7 +32,8 @@ html, body { margin: 0; min-height: 100%; background: var(--paper); color: var(-
   font: 14px/1.45 Lato, Helvetica, Arial, sans-serif; }
 [hidden] { display: none !important; }
 a { color: var(--link); }
-#tools { max-width: 800px; margin: 0 auto; padding: 0 16px 24px; }
+#tools { max-width: 800px; margin: 0 auto; padding: 0 16px; min-height: 100vh; display: flex; flex-direction: column; }
+.page-foot { margin-top: auto; }
 
 /* the charcoal header, full width, with the tabs hanging from it */
 .band { background: var(--charcoal); color: var(--on-dark); margin: 0 calc(50% - 50vw) 14px; padding: 0 calc(50vw - 50%); }
@@ -68,6 +69,25 @@ button.primary { background: var(--btn); border-color: var(--btn); color: var(--
 .tile-status { display: flex; gap: 10px; align-items: center; color: var(--soft); }
 .tile-frame { display: block; width: 100%; height: 900px; border: 1px solid var(--line); border-radius: 12px; background: var(--card); }
 .foot { margin-top: 14px; color: var(--soft); font-size: 12px; }
+
+/* the header's wordmark goes home to acuityip.com (same tab) */
+a.wordmark { text-decoration: none; }
+a.wordmark:hover { text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 4px; }
+a.wordmark:focus-visible { outline: 2px solid var(--gold); outline-offset: 3px; border-radius: 2px; }
+
+/* the firm footer, as on acuityip.com: a charcoal band, centred */
+.firm { background: var(--charcoal); color: var(--on-dark); text-align: center; font-size: 13.5px;
+  margin: 18px calc(50% - 50vw) 0; padding: 18px calc(50vw - 50% + 16px) 20px; }
+.firm p { margin: 0 0 10px; }
+.firm p:last-child { margin-bottom: 0; }
+.firm a { color: var(--gold); }
+.firm a.plain { color: inherit; text-decoration: none; }
+.firm .social a { display: inline-block; line-height: 0; border-radius: 4px; }
+.firm .social img { width: 36px; height: auto; display: block; }
+.firm .social a:hover img { opacity: .85; }
+.firm .sep { color: var(--on-dark-soft); }
+.firm .privacy { color: var(--on-dark-soft); font-size: 12px; }
+.firm a:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
 .wait, .framed { padding: 40px 0; text-align: center; }
 
 .doc-bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 0 0 10px; padding: 8px 10px;

@@ -66,7 +66,21 @@ assert.equal(await page.locator('#print-report').isHidden(), true, 'the print ar
 ok('Exam stats tab: #exam selects it');
 assert.match(await page.locator('.foot').textContent(), /estimates; the docketing system controls/);
 assert.equal(await page.locator('.why').textContent(), 'Firm access to USPTO and EPO data tools via Acuity IP proxy.');
-ok('footer and permission note');
+const home = page.locator('header a.wordmark');
+assert.equal(await home.getAttribute('href'), 'https://acuityip.com/');
+assert.equal(await home.getAttribute('target'), null, 'the wordmark goes home in the same tab');
+const firm = page.locator('footer .firm');
+assert.equal(await firm.locator('.disclaimer').textContent(), 'This website does not constitute legal advice or create an attorney-client relationship.');
+assert.match(await firm.locator('.contact').textContent(), /^\u00a9 \d{4} Acuity IP, LLC \| 5460 Ward Road, Suite 320, Arvada CO 80002 \| \(720\) 277-7283 \| ncassell@acuityip\.com$/);
+assert.equal(await firm.locator('a[href="tel:+17202777283"]').count(), 1);
+assert.equal(await firm.locator('a[href="mailto:ncassell@acuityip.com"]').count(), 1);
+assert.equal(await firm.locator('.social a').getAttribute('href'), 'https://bsky.app/profile/acuityip.com');
+assert.equal(await firm.locator('.social a').getAttribute('rel'), 'noopener noreferrer');
+assert.equal(await firm.locator('.social a').getAttribute('aria-label'), 'Acuity IP on Bluesky');
+assert.equal(await firm.locator('.social img').getAttribute('src'), '/bluesky-icon-gold.png');
+assert.ok(await firm.locator('.social img').evaluate((i) => i.complete && i.naturalWidth > 0), 'the icon loads from the tools site itself');
+assert.match(await firm.locator('.privacy').textContent(), /Lookups are not stored/);
+ok('footer and permission note; acuityIP. links home; firm footer as on acuityip.com');
 
 // Offices: USPTO | EPO in the header; each office its own tabs; EP addresses; old addresses still USPTO.
 assert.equal(await page.locator('.tools').textContent(), 'patent data');

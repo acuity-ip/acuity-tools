@@ -8,6 +8,19 @@ export const SITE = Object.freeze({
   origin: 'https://tools.acuityip.com',
 });
 
+// The firm, as acuityip.com's own footer shows it (Nathan, Nov 2 2026). The disclaimer is word for word.
+export const FIRM = Object.freeze({
+  home: 'https://acuityip.com/',
+  legal: 'Acuity IP, LLC',
+  address: '5460 Ward Road, Suite 320, Arvada CO 80002',
+  phone: '(720) 277-7283',
+  tel: '+17202777283',
+  email: 'ncassell@acuityip.com',
+  bluesky: 'https://bsky.app/profile/acuityip.com',
+  disclaimer: 'This website does not constitute legal advice or create an attorney-client relationship.',
+  privacy: 'Lookups are not stored: results are kept in memory only, and logs record no application numbers.',
+});
+
 // The only account that may use this page (the proxy enforces the same allowlist).
 export const PRACTICE = Object.freeze({ did: 'did:plc:5uyc6bnln26yftnfkqtlwxr3', handle: 'acuityip.com' });
 

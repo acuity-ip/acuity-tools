@@ -5,7 +5,7 @@
 //   EPO:   Timeline (#ep/timeline, #EP23215480 or #EP4571955)
 import './style.css';
 import { TileMothership, Tile } from '@dasl/tile-loader';
-import { SITE, PRACTICE, PINS, TILE_LOAD_DOMAIN, TIMES, BRIDGE_LIMITS } from './config.js';
+import { SITE, PRACTICE, PINS, TILE_LOAD_DOMAIN, TIMES, BRIDGE_LIMITS, FIRM } from './config.js';
 import { isFramed, showOpenInOwnTab } from './frame-guard.js';
 import { createAuth, isSignInReturn, SignInStopped, WrongAccount } from './auth.js';
 import { createPinnedLoader } from './pinned.js';
@@ -56,18 +56,29 @@ async function start() {
     us: 'Published US applications and patents only. Data: USPTO Open Data Portal (applications, office actions and PTAB decisions). Response windows are estimates; the docketing system controls.',
     ep: 'Published European applications only. Data: European Patent Office (EP Register, through Open Patent Services). Time limits are estimates; the docketing system controls.',
   };
-  const foot = h('footer', { class: 'foot' }, FOOT.us);
+  const foot = h('p', { class: 'foot' }, FOOT.us);   // the data source line: changes with the office
+  // The firm's own footer, as on acuityip.com: disclaimer, Bluesky, then name, address, phone and email.
+  const sep = () => h('span', { class: 'sep', 'aria-hidden': 'true' }, ' | ');
+  const firm = h('div', { class: 'firm' },
+    h('p', { class: 'disclaimer' }, FIRM.disclaimer),
+    h('p', { class: 'social' }, h('a', { href: FIRM.bluesky, target: '_blank', rel: 'noopener noreferrer', referrerpolicy: 'no-referrer', 'aria-label': 'Acuity IP on Bluesky', title: 'Bluesky' },
+      h('img', { src: '/bluesky-icon-gold.png', alt: '', width: '36', height: '32' }))),   // acuityip.com's own icon, coloured as its footer shows it
+    h('p', { class: 'contact' },
+      `\u00a9 ${new Date().getFullYear()} ${FIRM.legal}`, sep(), FIRM.address, sep(),
+      h('a', { class: 'plain', href: `tel:${FIRM.tel}` }, FIRM.phone), sep(),
+      h('a', { href: `mailto:${FIRM.email}` }, FIRM.email)),
+    h('p', { class: 'privacy' }, FIRM.privacy));
   const stage = h('main', { class: 'stage' });
   root.replaceChildren(
     h('header', { class: 'band' },
       h('div', { class: 'top' },
-        h('div', { class: 'brand' }, h('span', { class: 'wordmark' }, 'acuityIP.'), h('span', { class: 'tools' }, 'patent data'), offices),
+        h('div', { class: 'brand' }, h('a', { class: 'wordmark', href: FIRM.home, title: 'acuityip.com', referrerpolicy: 'no-referrer' }, 'acuityIP.'), h('span', { class: 'tools' }, 'patent data'), offices),
         account),
       tabs),
     note,
     docBar,
     stage,
-    foot);
+    h('footer', { class: 'page-foot' }, foot, firm));
 
   const say = (text) => { note.textContent = text || ''; note.hidden = !text; };
 
