@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createBridge, normalizeAppNumber, normalizeEpNumber, numberCheckFor, queryParams, EP_TYPES } from '../src/bridge.js';
+import { createBridge, normalizeAppNumber, normalizeEpNumber, numberCheckFor, queryParams, EP_TYPES, FAMILY_TYPES } from '../src/bridge.js';
+import { linkFor, LINKS } from '../src/links.js';
 import { checkReport, renderReport } from '../src/report.js';
 import { createProxyClient, SignInNeeded } from '../src/proxy.js';
 import { createPinnedLoader, rawCid, TileChanged } from '../src/pinned.js';
@@ -363,7 +364,7 @@ test('report: rendered with text only', () => {
 // ---------- EPO (Nov 2 2026) ----------
 test('EP numbers: application (check digit dropped), publication, junk; each tile its own office', () => {
   assert.equal(normalizeEpNumber('EP 23 215 480.1'), 'EP23215480');
-  assert.equal(normalizeEpNumber('23215480'), 'EP23215480');
+  assert.equal(normalizeEpNumber('23215480'), null, 'the EP prefix is required on the page side');
   assert.equal(normalizeEpNumber('ep 4 571 955 a1'), 'EP4571955');
   for (const bad of ['', '18/649,422x', 'EP123', 'EP4571955/biblio', null, 12345678]) assert.equal(normalizeEpNumber(bad), null, String(bad));
   assert.equal(numberCheckFor('eptimeline'), normalizeEpNumber);
@@ -396,4 +397,47 @@ test('proxy client: epTimeline goes out as ep=', async () => {
     fetchImpl: async (url) => { urls.push(url); return new Response(JSON.stringify({ type: 'epTimeline', data: { office: 'EP' } }), { status: 200 }); } });
   assert.deepEqual(await ask('epTimeline', { ep: 'EP23215480' }), { data: { office: 'EP' } });
   assert.equal(urls[0], `${PROXY.url}/xrpc/${PROXY.lxm}?type=epTimeline&ep=EP23215480`);
+});
+
+// ---------- family and links out (Nov 2 2026) ----------
+test('links: fixed address patterns, numbers checked; anything else refused', () => {
+  assert.deepEqual(linkFor('epRegister', 'EP 23 215 480.1'), { target: 'epRegister', number: 'EP23215480', label: 'EP Register', url: 'https://register.epo.org/application?number=EP23215480&lng=en' });
+  assert.equal(linkFor('epDocuments', 'EP23215480').url, 'https://register.epo.org/application?number=EP23215480&lng=en&tab=doclist');
+  assert.equal(linkFor('epRegister', 'EP4571955'), null, 'the Register link takes the application number');
+  assert.equal(linkFor('espacenet', 'CN120149667A').url, 'https://worldwide.espacenet.com/patent/search?q=pn%3DCN120149667A');
+  assert.equal(linkFor('espacenet', 'ATE232441T1').url, 'https://worldwide.espacenet.com/patent/search?q=pn%3DATE232441T1');
+  assert.equal(linkFor('patentscope', 'WO2023176853A1').url, 'https://patentscope.wipo.int/search/en/detail.jsf?docId=WO2023176853');
+  assert.equal(linkFor('patentCenter', '18/649,422').url, 'https://patentcenter.uspto.gov/applications/18649422');
+  assert.equal(linkFor('patentCenter', '18/649,422').label, 'Patent Center (USPTO sign-in)');
+  for (const [t, n] of [['espacenet', 'EP4571955A1&q=x'], ['espacenet', 'javascript:alert(1)'], ['patentscope', 'WO123'], ['nowhere', 'EP23215480'], ['__proto__', 'x'], ['toString', 'x'], ['epRegister', null]]) {
+    assert.equal(linkFor(t, n), null, `${t} ${n}`);
+  }
+  for (const l of Object.values(LINKS)) assert.match(l.url('X'), /^https:\/\/(register\.epo\.org|worldwide\.espacenet\.com|patentscope\.wipo\.int|patentcenter\.uspto\.gov)\//);
+});
+
+test('bridge: family query passes the member number as of=; links only to allowed targets, and only checked numbers', async () => {
+  assert.deepEqual(FAMILY_TYPES, ['family']);
+  assert.deepEqual(queryParams({ type: 'family', of: 'US 2025/0192292 A1' }), { params: { of: 'US20250192292A1' } });
+  assert.deepEqual(queryParams({ type: 'family', of: '../legal' }), { reason: 'invalid-number' });
+  const asked = [], links = [];
+  const { b, dropped } = bridgeFor({ types: ['timeline', 'family'], linkTargets: ['espacenet', 'patentCenter'],
+    onLink: (t, n) => { const l = linkFor(t, n); if (l) links.push([l.target, l.number]); return !!l; },
+    ask: async (type, params) => { asked.push([type, params]); return { data: { members: [] } }; } });
+  await b.handle(q({ type: 'family', of: 'US20240285307A1' }));
+  assert.deepEqual(asked, [['family', { of: 'US20240285307A1' }]]);
+  await b.handle({ tool: 'acuity-odp', v: 1, kind: 'link', target: 'espacenet', number: 'US20240285307A1' });
+  await b.handle({ tool: 'acuity-odp', v: 1, kind: 'link', target: 'epRegister', number: 'EP23215480' });
+  await b.handle({ tool: 'acuity-odp', v: 1, kind: 'link', target: 'patentCenter', number: 'not a number' });
+  assert.deepEqual(links, [['espacenet', 'US20240285307A1']]);
+  assert.deepEqual(dropped.slice(-2), ['bad-link', 'bad-link']);
+});
+
+test('bridge: show between offices checks the target office\'s number', async () => {
+  const shown = [];
+  const { b, dropped } = bridgeFor({ onShow: (t, n) => shown.push([t, n]), showTiles: ['exam', 'eptimeline'] });
+  await b.handle({ tool: 'acuity-odp', v: 1, kind: 'show', tile: 'eptimeline', appNumber: 'EP23215480' });
+  await b.handle({ tool: 'acuity-odp', v: 1, kind: 'show', tile: 'eptimeline', appNumber: '18649422' });
+  await b.handle({ tool: 'acuity-odp', v: 1, kind: 'show', tile: 'timeline', appNumber: '18906701' });
+  assert.deepEqual(shown, [['eptimeline', 'EP23215480']]);
+  assert.deepEqual(dropped, ['bad-show', 'bad-show']);
 });

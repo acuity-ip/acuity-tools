@@ -77,6 +77,7 @@ a.button { display: inline-block; padding: 7px 12px; border-radius: 6px; border:
   color: var(--ink); text-decoration: none; }
 a.button.primary { background: var(--btn); border-color: var(--btn); color: var(--btn-ink); font-weight: 700; }
 .doc-bar button.quiet { border: 0; background: transparent; font-size: 18px; line-height: 1; padding: 2px 6px; color: inherit; }
+.doc-bar span.fine { flex: 0 1 auto; min-width: 0; font-size: 12px; opacity: .8; }
 
 /* printable report: hidden on screen; when printing, the only thing on the page */
 .print-report { display: none; }

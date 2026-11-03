@@ -12,6 +12,8 @@
 //         show  { tile, appNumber }                           (appeals -> timeline; timeline -> exam: open an application there)
 //         print { report }                                    (exam stats tile: the page prints a report built from plain data)
 //         query { id, type: "epTimeline", appNumber }         (EPO timeline tile: appNumber is an EP application or publication number)
+//         query { id, type: "family", of }                    (both timelines: the INPADOC family of a published member, e.g. US20250192292A1)
+//         link  { target, number }                            (both timelines: the page offers a link out; see links.js)
 //   down: status { signedIn } | open { appNumber } | result { id, type, data } | error { id, reason, message?, field?, progress? }
 //
 // A decision PDF never goes into a tile (tiles have no popups and no network). The page keeps it and shows
@@ -25,6 +27,7 @@ export const STATS_TYPES = ['appealStats'];
 export const OA_TYPES = ['actions', 'actionText'];
 export const EXAM_TYPES = ['examStats'];
 export const EP_TYPES = ['epTimeline'];
+export const FAMILY_TYPES = ['family'];
 const ACTION_ID = /^[0-9a-f]{24,64}$/;
 const ID = /^[A-Za-z0-9_-]{1,40}$/;
 const DOC_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
@@ -35,10 +38,16 @@ export function normalizeAppNumber(input) {
   return /^\d{8}$/.test(s) ? s : null;
 }
 
-/** "EP 23 215 480.1", "23215480", "EP4571955", "EP 4 571 955 A1" -> "EP23215480" / "EP4571955"; anything else null. */
+/**
+ * "EP 23 215 480.1", "EP4571955", "EP 4 571 955 A1" -> "EP23215480" / "EP4571955"; anything else null.
+ * The page insists on the EP prefix (the tile adds it to what people type), so a bare 8-digit US number can never
+ * be taken for an EP application.
+ */
 export function normalizeEpNumber(input) {
   if (typeof input !== 'string' || input.length > 40) return null;
-  const s = input.toUpperCase().replace(/[\s,]/g, '').replace(/^EP/, '').replace(/(A[1-9]|B[1-9])$/, '');
+  const t = input.toUpperCase().replace(/[\s,]/g, '');
+  if (!t.startsWith('EP')) return null;
+  const s = t.slice(2).replace(/(A[1-9]|B[1-9])$/, '');
   const a = /^(\d{8})(?:\.\d)?$/.exec(s);
   if (a) return `EP${a[1]}`;
   return /^\d{7}$/.test(s) ? `EP${s}` : null;
@@ -80,6 +89,10 @@ export function queryParams(payload) {
       if (!/^\d{10}$/.test(appeal) || !DOC_ID.test(doc)) return { reason: 'bad-search' };
       return { params: { appeal, doc } };
     }
+    case 'family': {
+      const of = typeof payload.of === 'string' && payload.of.length <= 40 ? payload.of.toUpperCase().replace(/[\s,/]/g, '') : '';
+      return /^[A-Z]{2}[0-9A-Z]{4,15}$/.test(of) ? { params: { of } } : { reason: 'invalid-number' };
+    }
     case 'epTimeline': {
       const ep = normalizeEpNumber(payload.appNumber);
       return ep ? { params: { ep } } : { reason: 'invalid-number' };
@@ -111,8 +124,10 @@ export function queryParams(payload) {
  * @param {(raw: object) => object|null} [o.checkReport]          turns the tile's report into a safe one, or null
  * @param {{maxMessageBytes:number,inFlight:number,perMinute:number}} o.limits
  * @param {(n: string) => string|null} [o.numberCheck]           this tile's own numbers, for open (US by default; EP for EP tiles)
+ * @param {(target: string, number: string) => boolean} [o.onLink] the page checks and offers a link out (true if it did)
+ * @param {string[]} [o.linkTargets]                              the link targets this tile may ask for
  */
-export function createBridge({ send, ask, signedIn, types = TYPES, limits, onDoc = null, onShow = null, showTiles = [], onPrint = null, checkReport = null, numberCheck = normalizeAppNumber, now = () => Date.now(), onDrop = () => {} }) {
+export function createBridge({ send, ask, signedIn, types = TYPES, limits, onDoc = null, onShow = null, showTiles = [], onPrint = null, checkReport = null, numberCheck = normalizeAppNumber, onLink = null, linkTargets = [], now = () => Date.now(), onDrop = () => {} }) {
   let inFlight = 0;
   let window = { start: 0, n: 0 };
   let pendingOpen = null;
@@ -144,6 +159,11 @@ export function createBridge({ send, ask, signedIn, types = TYPES, limits, onDoc
       const app = numberCheckFor(payload.tile)(payload.appNumber);
       if (!app) return onDrop('bad-show');
       onShow(payload.tile, app);
+      return;
+    }
+    if (payload.kind === 'link') {
+      if (!onLink || typeof payload.target !== 'string' || !linkTargets.includes(payload.target)) return onDrop('bad-link');
+      if (!onLink(payload.target, payload.number)) return onDrop('bad-link');
       return;
     }
     if (payload.kind === 'print') {

@@ -10,7 +10,8 @@ import { isFramed, showOpenInOwnTab } from './frame-guard.js';
 import { createAuth, isSignInReturn, SignInStopped, WrongAccount } from './auth.js';
 import { createPinnedLoader } from './pinned.js';
 import { createProxyClient } from './proxy.js';
-import { createBridge, APPEAL_TYPES, STATS_TYPES, OA_TYPES, EXAM_TYPES, EP_TYPES, normalizeEpNumber, normalizeAppNumber } from './bridge.js';
+import { createBridge, APPEAL_TYPES, STATS_TYPES, OA_TYPES, EXAM_TYPES, EP_TYPES, FAMILY_TYPES, normalizeEpNumber, normalizeAppNumber } from './bridge.js';
+import { linkFor } from './links.js';
 import { checkReport, renderReport } from './report.js';
 
 const UP = 'tiles-protocol-up-data-payload';
@@ -107,6 +108,20 @@ async function start() {
     docBar.hidden = false;
   }
 
+  // ---------- links out (built by the page from fixed patterns; tiles only name a target and a number) ----------
+  function showLink(target, number) {
+    const l = linkFor(target, number);
+    if (!l) return false;
+    docBar.replaceChildren(
+      h('span', {}, `${l.label} for ${l.number}:`),
+      h('a', { class: 'button primary', href: l.url, target: '_blank', rel: 'noopener noreferrer', referrerpolicy: 'no-referrer' }, 'Open in a new tab'),
+      h('span', { class: 'fine' }, 'The site may ask you to confirm you\u2019re human.'),
+      h('button', { type: 'button', class: 'quiet', 'aria-label': 'Dismiss', onclick: () => { docBar.hidden = true; } }, '\u00d7'));
+    docBar.hidden = false;
+    return true;
+  }
+  const ALL_LINKS = ['epRegister', 'epDocuments', 'espacenet', 'patentscope', 'patentCenter'];
+
   // ---------- printable reports (built by the page from a tile's plain data; nothing kept) ----------
   const printBox = h('div', { id: 'print-report', class: 'print-report', 'aria-hidden': 'true' });
   document.body.append(printBox);
@@ -136,11 +151,11 @@ async function start() {
 
   // hash: the tab's own address (default: its id). number: the numbers its tile takes (US by default).
   const SLOTS = {
-    timeline: { office: 'us', label: 'Timeline', title: 'USPTO timeline', types: ['timeline', ...OA_TYPES], height: 900, show: ['exam'] },
+    timeline: { office: 'us', label: 'Timeline', title: 'USPTO timeline', types: ['timeline', ...OA_TYPES, ...FAMILY_TYPES], height: 1200, show: ['exam', 'eptimeline'], links: ALL_LINKS },
     appeals: { office: 'us', label: 'Appeals', title: 'PTAB appeal decisions', types: APPEAL_TYPES, height: 1500, doc: true, show: ['timeline'] },
     stats: { office: 'us', label: 'Appeal stats', title: 'PTAB appeal statistics', types: STATS_TYPES, height: 1500 },
     exam: { office: 'us', label: 'Exam stats', title: 'USPTO examination statistics', types: EXAM_TYPES, height: 1500, print: true },
-    eptimeline: { office: 'ep', hash: 'ep/timeline', label: 'Timeline', title: 'EPO timeline', types: EP_TYPES, height: 1100, number: normalizeEpNumber },
+    eptimeline: { office: 'ep', hash: 'ep/timeline', label: 'Timeline', title: 'EPO timeline', types: [...EP_TYPES, ...FAMILY_TYPES], height: 1500, number: normalizeEpNumber, show: ['timeline'], links: ALL_LINKS },
   };
   const hashOf = (id) => SLOTS[id].hash || id;
   const lastTab = { us: null, ep: null };
@@ -163,6 +178,8 @@ async function start() {
       onPrint: spec.print ? showReport : null,
       checkReport,
       numberCheck: spec.number || normalizeAppNumber,
+      onLink: spec.links ? showLink : null,
+      linkTargets: spec.links || [],
       onDrop: (why) => console.warn(`[tools] dropped a message from the ${id} tile:`, why),
     });
     tabs.append(slot.tab);
