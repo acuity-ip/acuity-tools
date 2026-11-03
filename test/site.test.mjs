@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createBridge, normalizeAppNumber } from '../src/bridge.js';
+import { createBridge, normalizeAppNumber, normalizeEpNumber, numberCheckFor, queryParams, EP_TYPES } from '../src/bridge.js';
 import { checkReport, renderReport } from '../src/report.js';
 import { createProxyClient, SignInNeeded } from '../src/proxy.js';
 import { createPinnedLoader, rawCid, TileChanged } from '../src/pinned.js';
@@ -358,4 +358,42 @@ test('report: rendered with text only', () => {
   assert.ok(made.some((n) => n.tag === 'h1' && n.kids[0] === '<b>x</b>'), 'markup stays text');
   assert.ok(made.some((n) => n.tag === 'td' && n.kids[0] === '2.1% (297)'));
   assert.ok(made.some((n) => n.tag === 'p' && /Not docketing advice/.test(n.kids[0])));
+});
+
+// ---------- EPO (Nov 2 2026) ----------
+test('EP numbers: application (check digit dropped), publication, junk; each tile its own office', () => {
+  assert.equal(normalizeEpNumber('EP 23 215 480.1'), 'EP23215480');
+  assert.equal(normalizeEpNumber('23215480'), 'EP23215480');
+  assert.equal(normalizeEpNumber('ep 4 571 955 a1'), 'EP4571955');
+  for (const bad of ['', '18/649,422x', 'EP123', 'EP4571955/biblio', null, 12345678]) assert.equal(normalizeEpNumber(bad), null, String(bad));
+  assert.equal(numberCheckFor('eptimeline'), normalizeEpNumber);
+  assert.equal(numberCheckFor('timeline'), normalizeAppNumber);
+  assert.deepEqual(queryParams({ type: 'epTimeline', appNumber: 'EP 23 215 480.1' }), { params: { ep: 'EP23215480' } });
+  assert.deepEqual(queryParams({ type: 'epTimeline', appNumber: '18649422/x' }), { reason: 'invalid-number' });
+  assert.deepEqual(EP_TYPES, ['epTimeline']);
+});
+
+test('bridge: the EPO tile asks only epTimeline, with an EP number; open takes EP numbers only', async () => {
+  const asked = [];
+  const { b, sent } = bridgeFor({ types: EP_TYPES, numberCheck: normalizeEpNumber, ask: async (type, params) => { asked.push([type, params]); return { data: { office: 'EP' } }; } });
+  assert.equal(b.open('18649422x'), false);
+  assert.equal(b.open('EP4571955'), true);
+  await b.handle({ tool: 'acuity-odp', v: 1, kind: 'hello' });
+  assert.deepEqual(sent.at(-1), { appNumber: 'EP4571955', tool: 'acuity-odp', v: 1, kind: 'open' });
+  await b.handle(q({ type: 'epTimeline', appNumber: 'EP23215480' }));
+  assert.deepEqual(asked, [['epTimeline', { ep: 'EP23215480' }]]);
+  assert.deepEqual(sent.at(-1), { id: 'q1', type: 'epTimeline', data: { office: 'EP' }, tool: 'acuity-odp', v: 1, kind: 'result' });
+  await b.handle(q({ id: 'q2', type: 'timeline', appNumber: '18649422' }));
+  assert.equal(sent.at(-1).reason, 'bad-type', 'no USPTO lookups from the EPO tile');
+  await b.handle(q({ id: 'q3', type: 'epTimeline', appNumber: 'nonsense' }));
+  assert.equal(sent.at(-1).reason, 'invalid-number');
+  assert.equal(asked.length, 1);
+});
+
+test('proxy client: epTimeline goes out as ep=', async () => {
+  const urls = [];
+  const ask = createProxyClient({ getPass: async () => 'pass', proxy: PROXY,
+    fetchImpl: async (url) => { urls.push(url); return new Response(JSON.stringify({ type: 'epTimeline', data: { office: 'EP' } }), { status: 200 }); } });
+  assert.deepEqual(await ask('epTimeline', { ep: 'EP23215480' }), { data: { office: 'EP' } });
+  assert.equal(urls[0], `${PROXY.url}/xrpc/${PROXY.lxm}?type=epTimeline&ep=EP23215480`);
 });

@@ -1,5 +1,8 @@
-// Acuity IP tools: the host page. Signs in as the practice, loads the pinned tiles (Timeline, Appeals, Appeal stats, Exam stats) through
-// one mothership, and answers their lookups through the ODP proxy. Tiles never touch the network.
+// Acuity IP tools: the host page. Signs in as the practice, loads the pinned tiles through one mothership, and answers
+// their lookups through the proxy. Tiles never touch the network.
+// Offices (Nov 2 2026): a USPTO | EPO switcher in the header; each office has its own tabs and tiles.
+//   USPTO: Timeline, Appeals, Appeal stats, Exam stats (#timeline, #appeals, #stats, #exam, #18649422)
+//   EPO:   Timeline (#ep/timeline, #EP23215480 or #EP4571955)
 import './style.css';
 import { TileMothership, Tile } from '@dasl/tile-loader';
 import { SITE, PRACTICE, PINS, TILE_LOAD_DOMAIN, TIMES, BRIDGE_LIMITS } from './config.js';
@@ -7,7 +10,7 @@ import { isFramed, showOpenInOwnTab } from './frame-guard.js';
 import { createAuth, isSignInReturn, SignInStopped, WrongAccount } from './auth.js';
 import { createPinnedLoader } from './pinned.js';
 import { createProxyClient } from './proxy.js';
-import { createBridge, APPEAL_TYPES, STATS_TYPES, OA_TYPES, EXAM_TYPES } from './bridge.js';
+import { createBridge, APPEAL_TYPES, STATS_TYPES, OA_TYPES, EXAM_TYPES, EP_TYPES, normalizeEpNumber, normalizeAppNumber } from './bridge.js';
 import { checkReport, renderReport } from './report.js';
 
 const UP = 'tiles-protocol-up-data-payload';
@@ -45,19 +48,24 @@ async function start() {
   const note = h('p', { class: 'note', 'aria-live': 'polite', hidden: true });
   const docBar = h('div', { class: 'doc-bar', 'aria-live': 'polite', hidden: true });
   const tabs = h('nav', { class: 'tabs', role: 'tablist' });
+  const OFFICES = { us: { label: 'USPTO', first: 'timeline' }, ep: { label: 'EPO', first: 'eptimeline' } };
+  const offices = h('nav', { class: 'offices', 'aria-label': 'Patent office' });
+  const FOOT = {
+    us: 'Published US applications and patents only. Data: USPTO Open Data Portal (applications, office actions and PTAB decisions). Response windows are estimates; the docketing system controls.',
+    ep: 'Published European applications only. Data: European Patent Office (EP Register, through Open Patent Services). Time limits are estimates; the docketing system controls.',
+  };
+  const foot = h('footer', { class: 'foot' }, FOOT.us);
   const stage = h('main', { class: 'stage' });
   root.replaceChildren(
     h('header', { class: 'band' },
       h('div', { class: 'top' },
-        h('div', { class: 'brand' }, h('span', { class: 'wordmark' }, 'acuityIP.'), h('span', { class: 'tools' }, 'uspto data')),
+        h('div', { class: 'brand' }, h('span', { class: 'wordmark' }, 'acuityIP.'), h('span', { class: 'tools' }, 'patent data'), offices),
         account),
       tabs),
     note,
     docBar,
     stage,
-    h('footer', { class: 'foot' },
-      'Published US applications and patents only. Data: USPTO Open Data Portal (applications, office actions and PTAB decisions). ',
-      'Response windows are estimates; the docketing system controls.'));
+    foot);
 
   const say = (text) => { note.textContent = text || ''; note.hidden = !text; };
 
@@ -69,7 +77,7 @@ async function start() {
     } else {
       account.append(
         h('button', { type: 'button', class: 'primary', onclick: onSignIn }, `Sign in as @${PRACTICE.handle}`),
-        h('span', { class: 'why' }, 'Firm access to USPTO data tools via Acuity IP proxy.'));
+        h('span', { class: 'why' }, 'Firm access to USPTO and EPO data tools via Acuity IP proxy.'));
     }
   }
 
@@ -126,12 +134,16 @@ async function start() {
   mothership.init();
   const ask = createProxyClient({ getPass: () => auth.getPass() });
 
+  // hash: the tab's own address (default: its id). number: the numbers its tile takes (US by default).
   const SLOTS = {
-    timeline: { label: 'Timeline', title: 'USPTO timeline', types: ['timeline', ...OA_TYPES], height: 900, show: ['exam'] },
-    appeals: { label: 'Appeals', title: 'PTAB appeal decisions', types: APPEAL_TYPES, height: 1500, doc: true, show: ['timeline'] },
-    stats: { label: 'Appeal stats', title: 'PTAB appeal statistics', types: STATS_TYPES, height: 1500 },
-    exam: { label: 'Exam stats', title: 'USPTO examination statistics', types: EXAM_TYPES, height: 1500, print: true },
+    timeline: { office: 'us', label: 'Timeline', title: 'USPTO timeline', types: ['timeline', ...OA_TYPES], height: 900, show: ['exam'] },
+    appeals: { office: 'us', label: 'Appeals', title: 'PTAB appeal decisions', types: APPEAL_TYPES, height: 1500, doc: true, show: ['timeline'] },
+    stats: { office: 'us', label: 'Appeal stats', title: 'PTAB appeal statistics', types: STATS_TYPES, height: 1500 },
+    exam: { office: 'us', label: 'Exam stats', title: 'USPTO examination statistics', types: EXAM_TYPES, height: 1500, print: true },
+    eptimeline: { office: 'ep', hash: 'ep/timeline', label: 'Timeline', title: 'EPO timeline', types: EP_TYPES, height: 1100, number: normalizeEpNumber },
   };
+  const hashOf = (id) => SLOTS[id].hash || id;
+  const lastTab = { us: null, ep: null };
   const slots = {};
   for (const [id, spec] of Object.entries(SLOTS)) {
     const slot = { id, spec, frame: null, heard: false, attempt: 0, timers: [], loaded: false };
@@ -150,11 +162,18 @@ async function start() {
       showTiles: spec.show || [],
       onPrint: spec.print ? showReport : null,
       checkReport,
+      numberCheck: spec.number || normalizeAppNumber,
       onDrop: (why) => console.warn(`[tools] dropped a message from the ${id} tile:`, why),
     });
     tabs.append(slot.tab);
     stage.append(slot.panel);
     slots[id] = slot;
+  }
+  const officeButtons = {};
+  for (const [key, o] of Object.entries(OFFICES)) {
+    officeButtons[key] = h('button', { type: 'button', class: 'office', id: `office-${key}`, 'aria-pressed': 'false',
+      onclick: () => choose(lastTab[key] || o.first, true) }, o.label);
+    offices.append(officeButtons[key]);
   }
 
   function setStatus(slot, text, ...actions) {
@@ -210,10 +229,15 @@ async function start() {
       s.tab.tabIndex = on ? 0 : -1;
     }
     shown = id;
+    const office = slot.spec.office;
+    lastTab[office] = id;
+    for (const s of Object.values(slots)) s.tab.hidden = s.spec.office !== office;
+    for (const [key, b] of Object.entries(officeButtons)) b.setAttribute('aria-pressed', key === office ? 'true' : 'false');
+    foot.textContent = FOOT[office];
     if (!slot.loaded) load(slot);
     if (appNumber) slot.bridge.open(appNumber);
     if (updateHash) {
-      const want = appNumber && id === 'timeline' ? `#${appNumber}` : `#${id}`;
+      const want = appNumber && (id === 'timeline' || id === 'eptimeline') ? `#${appNumber}` : `#${hashOf(id)}`;
       if (location.hash !== want) guarded(() => history.replaceState(null, '', want));
     }
   }
@@ -227,10 +251,15 @@ async function start() {
     slot.bridge.handle(d.payload);
   });
 
-  // The page address picks the tab: #appeals, #stats, #exam, #timeline, or #18649422 (opens that application).
+  // The page address picks the tab: #appeals, #stats, #exam, #timeline, #18649422 (opens that application),
+  // #ep/timeline (or #ep), #EP23215480 / #EP4571955 (opens that EP application in the EPO timeline).
   function fromHash() {
-    const raw = decodeURIComponent(location.hash.slice(1));
-    if (slots[raw]) return choose(raw);
+    let raw = '';
+    try { raw = decodeURIComponent(location.hash.slice(1)); } catch { raw = ''; }
+    const byHash = Object.keys(slots).find((id) => hashOf(id) === raw);
+    if (byHash) return choose(byHash);
+    if (raw.toLowerCase() === 'ep') return choose(lastTab.ep || OFFICES.ep.first, true);
+    if (/^ep/i.test(raw) && slots.eptimeline.bridge.open(raw)) return choose('eptimeline');
     if (raw && slots.timeline.bridge.open(raw)) return choose('timeline');
     if (!shown) choose('timeline');
   }

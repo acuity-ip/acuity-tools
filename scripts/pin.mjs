@@ -11,7 +11,7 @@ const published = JSON.parse(readFileSync(file, 'utf8'));
 const PRACTICE = 'did:plc:5uyc6bnln26yftnfkqtlwxr3';
 
 const pins = {};
-for (const id of ['timeline', 'appeals', 'stats', 'exam']) {
+for (const id of ['timeline', 'appeals', 'stats', 'exam', 'eptimeline']) {
   const p = published[id];
   if (!p) { pins[id] = null; continue; }
   if (!new RegExp(`^at://${PRACTICE}/ing\\.dasl\\.masl/[a-z0-9]{10,20}$`).test(p.uri)) throw new Error(`${id}: unexpected uri ${p.uri}`);

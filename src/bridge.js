@@ -11,6 +11,7 @@
 //         query { id, type: "examStats", exam }               (exam stats tile: a statistics request, as an object)
 //         show  { tile, appNumber }                           (appeals -> timeline; timeline -> exam: open an application there)
 //         print { report }                                    (exam stats tile: the page prints a report built from plain data)
+//         query { id, type: "epTimeline", appNumber }         (EPO timeline tile: appNumber is an EP application or publication number)
 //   down: status { signedIn } | open { appNumber } | result { id, type, data } | error { id, reason, message?, field?, progress? }
 //
 // A decision PDF never goes into a tile (tiles have no popups and no network). The page keeps it and shows
@@ -23,6 +24,7 @@ export const APPEAL_TYPES = ['appealSearch', 'appealDoc'];
 export const STATS_TYPES = ['appealStats'];
 export const OA_TYPES = ['actions', 'actionText'];
 export const EXAM_TYPES = ['examStats'];
+export const EP_TYPES = ['epTimeline'];
 const ACTION_ID = /^[0-9a-f]{24,64}$/;
 const ID = /^[A-Za-z0-9_-]{1,40}$/;
 const DOC_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
@@ -32,6 +34,18 @@ export function normalizeAppNumber(input) {
   const s = String(input ?? '').replace(/[\s\/,]/g, '');
   return /^\d{8}$/.test(s) ? s : null;
 }
+
+/** "EP 23 215 480.1", "23215480", "EP4571955", "EP 4 571 955 A1" -> "EP23215480" / "EP4571955"; anything else null. */
+export function normalizeEpNumber(input) {
+  if (typeof input !== 'string' || input.length > 40) return null;
+  const s = input.toUpperCase().replace(/[\s,]/g, '').replace(/^EP/, '').replace(/(A[1-9]|B[1-9])$/, '');
+  const a = /^(\d{8})(?:\.\d)?$/.exec(s);
+  if (a) return `EP${a[1]}`;
+  return /^\d{7}$/.test(s) ? `EP${s}` : null;
+}
+
+/** The number check for a tile: EP tiles take EP numbers, every other tile US application numbers. */
+export const numberCheckFor = (tile) => (String(tile).startsWith('ep') ? normalizeEpNumber : normalizeAppNumber);
 
 /** What a query asks the proxy for, checked; or { reason } if the tile sent something unusable. */
 export function queryParams(payload) {
@@ -66,6 +80,10 @@ export function queryParams(payload) {
       if (!/^\d{10}$/.test(appeal) || !DOC_ID.test(doc)) return { reason: 'bad-search' };
       return { params: { appeal, doc } };
     }
+    case 'epTimeline': {
+      const ep = normalizeEpNumber(payload.appNumber);
+      return ep ? { params: { ep } } : { reason: 'invalid-number' };
+    }
     case 'actionText': {
       const app = normalizeAppNumber(payload.appNumber);
       if (!app) return { reason: 'invalid-number' };
@@ -92,8 +110,9 @@ export function queryParams(payload) {
  * @param {(report: object) => void} [o.onPrint]                  a checked report (see report.js), for the page to print
  * @param {(raw: object) => object|null} [o.checkReport]          turns the tile's report into a safe one, or null
  * @param {{maxMessageBytes:number,inFlight:number,perMinute:number}} o.limits
+ * @param {(n: string) => string|null} [o.numberCheck]           this tile's own numbers, for open (US by default; EP for EP tiles)
  */
-export function createBridge({ send, ask, signedIn, types = TYPES, limits, onDoc = null, onShow = null, showTiles = [], onPrint = null, checkReport = null, now = () => Date.now(), onDrop = () => {} }) {
+export function createBridge({ send, ask, signedIn, types = TYPES, limits, onDoc = null, onShow = null, showTiles = [], onPrint = null, checkReport = null, numberCheck = normalizeAppNumber, now = () => Date.now(), onDrop = () => {} }) {
   let inFlight = 0;
   let window = { start: 0, n: 0 };
   let pendingOpen = null;
@@ -122,7 +141,7 @@ export function createBridge({ send, ask, signedIn, types = TYPES, limits, onDoc
     }
     if (payload.kind === 'show') {
       if (!onShow || !showTiles.includes(payload.tile)) return onDrop('bad-show');
-      const app = normalizeAppNumber(payload.appNumber);
+      const app = numberCheckFor(payload.tile)(payload.appNumber);
       if (!app) return onDrop('bad-show');
       onShow(payload.tile, app);
       return;
@@ -170,7 +189,7 @@ export function createBridge({ send, ask, signedIn, types = TYPES, limits, onDoc
     status() { if (greeted) down('status', { signedIn: !!signedIn() }); },
     /** Ask the tile to look up a number (e.g. from the page address); waits for its hello if needed. */
     open(appNumber) {
-      const app = normalizeAppNumber(appNumber);
+      const app = numberCheck(appNumber);
       if (!app) return false;
       if (greeted) down('open', { appNumber: app }); else pendingOpen = app;
       return true;

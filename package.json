@@ -2,7 +2,7 @@
   "name": "acuity-tools-site",
   "version": "0.1.0",
   "private": true,
-  "description": "tools.acuityip.com: host page for Acuity IP's USPTO tiles.",
+  "description": "tools.acuityip.com: host page for Acuity IP's USPTO and EPO tiles.",
   "type": "module",
   "scripts": {
     "dev": "vite",

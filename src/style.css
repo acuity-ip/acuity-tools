@@ -42,9 +42,16 @@ a { color: var(--link); }
 .tools { font: 15px "Headland One", Georgia, serif; color: var(--on-dark-soft); }
 .account { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: flex-end; }
 .who { font-weight: 700; color: var(--on-dark); }
-.why { color: var(--on-dark-soft); font-size: 12px; max-width: 280px; }
+.why { color: var(--on-dark-soft); font-size: 12px; max-width: 230px; }
 .band button.quiet { background: transparent; color: var(--on-dark); border: 1px solid var(--on-dark-line); }
 .band button.primary { background: var(--gold); border-color: var(--gold); color: #1d1e23; }
+
+/* the office switcher: USPTO | EPO, a segmented pair in the header */
+.offices { display: inline-flex; align-self: center; margin-left: 8px; border: 1px solid var(--on-dark-line); border-radius: 8px; overflow: hidden; }
+.band button.office { border: 0; border-radius: 0; background: transparent; color: var(--on-dark-soft); padding: 6px 14px; font-weight: 700; letter-spacing: .04em; }
+.band button.office + button.office { border-left: 1px solid var(--on-dark-line); }
+.band button.office:hover { color: var(--on-dark); }
+.band button.office[aria-pressed="true"] { background: var(--gold); color: #1d1e23; }
 
 .tabs { display: flex; gap: 4px; }
 .tab { border: 0; border-radius: 8px 8px 0 0; background: transparent; color: var(--on-dark-soft); padding: 8px 16px; font-weight: 700; }

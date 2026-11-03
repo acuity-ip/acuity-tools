@@ -65,8 +65,33 @@ assert.equal(await page.locator('#tab-exam').textContent(), 'Exam stats');
 assert.equal(await page.locator('#print-report').isHidden(), true, 'the print area stays out of sight on screen');
 ok('Exam stats tab: #exam selects it');
 assert.match(await page.locator('.foot').textContent(), /estimates; the docketing system controls/);
-assert.equal(await page.locator('.why').textContent(), 'Firm access to USPTO data tools via Acuity IP proxy.');
+assert.equal(await page.locator('.why').textContent(), 'Firm access to USPTO and EPO data tools via Acuity IP proxy.');
 ok('footer and permission note');
+
+// Offices: USPTO | EPO in the header; each office its own tabs; EP addresses; old addresses still USPTO.
+assert.equal(await page.locator('.tools').textContent(), 'patent data');
+assert.equal(await page.locator('#office-us').getAttribute('aria-pressed'), 'true');
+assert.equal(await page.locator('#tab-eptimeline').isHidden(), true, 'EPO tabs hidden while on USPTO');
+await page.locator('#office-ep').click();
+assert.match(page.url(), /#ep\/timeline$/);
+assert.equal(await page.locator('#office-ep').getAttribute('aria-pressed'), 'true');
+assert.equal(await page.locator('#tab-eptimeline').getAttribute('aria-selected'), 'true');
+for (const id of ['timeline', 'appeals', 'stats', 'exam']) assert.equal(await page.locator(`#tab-${id}`).isHidden(), true, `${id} tab hidden on EPO`);
+await checkTile('eptimeline', 'EPO timeline');
+assert.match(await page.locator('.foot').textContent(), /European Patent Office .*Open Patent Services/);
+await page.locator('#office-us').click();
+assert.match(page.url(), /#exam$/, 'back to the last USPTO tab');
+assert.match(await page.locator('.foot').textContent(), /USPTO Open Data Portal/);
+await page.goto(`${base}/#EP23215480`);
+await page.getByRole('button', { name: 'Sign in as @acuityip.com' }).waitFor();
+assert.equal(await page.locator('#tab-eptimeline').getAttribute('aria-selected'), 'true', '#EP23215480 opens the EPO timeline');
+await page.goto(`${base}/#18649422`);
+await page.getByRole('button', { name: 'Sign in as @acuityip.com' }).waitFor();
+assert.equal(await page.locator('#tab-timeline').getAttribute('aria-selected'), 'true', '#18649422 is still USPTO');
+await page.goto(`${base}/#ep`);
+await page.getByRole('button', { name: 'Sign in as @acuityip.com' }).waitFor();
+assert.equal(await page.locator('#tab-eptimeline').getAttribute('aria-selected'), 'true', '#ep opens the EPO tabs');
+ok('office switcher: USPTO | EPO, per-office tabs and footer, #ep/timeline, #EP23215480, #ep; #18649422 stays USPTO');
 
 const oauth = await (await page.request.get(`${base}/oauth.json`)).json();
 assert.equal(oauth.scope, 'atproto rpc:com.acuityip.odp.query?aud=did:web:acuity-odp.fly.dev%23acuity_odp');
